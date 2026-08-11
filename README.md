@@ -1,0 +1,285 @@
+# 奥克兰选房 AI Agent — 数据底座
+
+第一步：大奥克兰（Auckland Region）按 suburb 的房价热力图 → [`heatmap.html`](heatmap.html)
+
+## 用法
+
+```bash
+python3 scripts/fetch_prices.py      # 各 suburb 房价（217 个页面，约 1 分钟）
+python3 scripts/fetch_boundaries.py  # LINZ suburb 边界
+python3 scripts/fetch_wikipedia.py   # 各 suburb 维基百科简介（限速，约 3 分钟）
+python3 scripts/fetch_valuations.py  # 62 万个地块的政府估价 CV（约 2 分钟，10 MB）
+python3 scripts/build_detail.py      # 空间关联 + 按 35 米网格聚合
+python3 scripts/build_map.py         # 生成 heatmap.html + suburb_prices.csv
+python3 scripts/build_db.py          # 装进 DuckDB（约 20 秒）
+```
+
+查询：
+
+```bash
+python3 scripts/q.py --schema
+python3 scripts/q.py "SELECT name, avg_house_value FROM suburb_overview ORDER BY 2 DESC LIMIT 10"
+```
+
+四个 `fetch_*` 只需在数据要更新时重跑；改样式只跑最后两个（`build_detail.py`
+在边界或估价变了才需要重跑）。
+
+只有 Python 3 标准库，无第三方依赖。生成后直接用浏览器打开 `heatmap.html`
+（单文件，无外部请求）。
+
+## 产出
+
+| 文件 | 内容 |
+|---|---|
+| `heatmap.html` | 独立页面。全区图：发散色阶（蓝＝便宜／红＝贵）、悬停、搜索、数据表。**点任一郊区**进入详情：区内 35 米网格 CV 热力图 + 简介 + 市场指标 + 户型结构 + 房价走势 + CV 分布 |
+| `data/suburb_detail.json` | 285 个郊区的网格化 CV（base64 打包）与分位数、直方图 |
+| `data/raw/valuations.jsonl.gz` | 623,765 个计税单元的 CV/LV（2021 与 2024 两次估价）+ 地块中心点 |
+| `data/raw/wikipedia.json` | 204 个郊区的维基百科简介 |
+| `data/suburb_prices.csv` | 286 行扁平表，供 agent 直接查询 |
+| `data/join_report.txt` | 边界与价格的匹配结果、无数据郊区清单 |
+| `data/raw/opes_suburbs.json` | 原始抓取记录，含 2000 年至今的年度价格序列 |
+| `data/raw/auckland_boundaries.geojson` | LINZ 郊区边界（WGS84，已简化） |
+| `data/auckland.duckdb` | **主数据库**，59 MB，见下节 |
+| `scripts/q.py` | 命令行查询（默认只读）；`--schema` 打印表结构 |
+| `queries/examples.sql` | 7 条可直接跑的示例查询 |
+| `build/heatmap_body.html` | 同一页面的 body-only 版本（用于发布成 Artifact） |
+
+`suburb_prices.csv` 的列：
+
+```
+name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, url
+```
+
+- `price` — Average House Value（区内全部住宅自动估值的平均），截至 2026-06
+- `yoy` — 过去 12 个月变化（小数，-0.078 = 下跌 7.8%）
+- `growth` — 长期年化资本增长（%）
+- `rent` / `yield` — 周租金中位数（NZD）／估算毛租金回报（%）
+- `days` / `sold` — 中位售出天数／近 12 个月成交套数
+- 空值 = 数据源未提供（源数据用 0 当缺失标记，已在生成时转为空）
+
+## 数据来源
+
+- **价格**：[Opes Partners](https://www.opespartners.co.nz/property-markets/auckland)
+  各 suburb 市场页（数据更新于 2026-04-16，口径为 2026 年 6 月）。
+  抓取方式：页面是 Next.js app router，suburb 记录内嵌在 RSC flight payload 的
+  `suburbData` 键里，脚本重建 payload 后直接 JSON 解析——不是 HTML 正则。
+  `robots.txt` 为 `Allow: /`。
+- **边界**：LINZ《NZ Suburbs and Localities》，经 LINZ 官方 ArcGIS Online 要素服务
+  取得，CC BY 4.0。查询条件 `territorial_authority LIKE '%Auckland%'`（跨界的
+  Pukekohe、Waiuku 在该字段里是 `Auckland, Waikato District`），几何按约 22 米简化。
+- **政府估价 CV**：Auckland Council 的 `AGOL_RateAccountInfo1_gdb` 要素服务
+  （公开、无需鉴权），逐计税单元给出 `CV/LV`（2021-06-01 估值）与 `LCV/LLV`
+  （2024-05-01 重估）。用 `returnCentroid=true` 只取地块中心点，避免拉 62 万个多边形。
+- **简介**：英文维基百科 API，CC BY-SA 4.0。标题有歧义（Albany 是纽约州的城市），
+  所以按 `{名}, Auckland` → `{名}, New Zealand` → `{名}` 依次尝试，并用条目坐标与
+  suburb 中心点的距离（≤20 km）核验后才采纳。
+
+## 自动化流水线
+
+`scripts/pipeline.py` 是编排层。核心是一条 **fetch → validate → promote** 的链路：
+每个抓取脚本先写进 `data/incoming/`，**只有通过该源的校验才会原子替换 `data/raw/` 里的文件**。
+所以源站改版最坏的结果是"沿用上个月的数据 + 日志里一条 failed"，而不是把好数据洗掉。
+
+### 各源按自己的节奏抓
+
+它们根本不同频，全部按月抓是白跑请求：
+
+| 源 | 周期 | 为什么 |
+|---|---|---|
+| `prices` | 30 天 | Opes 大约季度级刷新 |
+| `valuations` | 90 天 | 议会 CV 是三年一轮重估（2021 → 2024 → 约 2027），期间只有零星更正 |
+| `boundaries` | 90 天 | LINZ 一年改几次 |
+| `wikipedia` | 180 天 | 几乎不动 |
+
+`pipeline.py run` 每次只抓到期的；`--force prices` 或 `--force all` 可以强制。
+
+### 校验闸门
+
+| 源 | 通过条件 |
+|---|---|
+| `prices` | ≥190 个 suburb 有价格；中位数相对库里上一版漂移 ≤30% |
+| `valuations` | ≥590,000 个计税单元；≥95% 带 CV；均值漂移 ≤25% |
+| `boundaries` | 250–400 个多边形；每个都有 name 和 geometry |
+| `wikipedia` | ≥180 条非空简介 |
+
+实测这两条确实会拦下来：源站只返回 20 个 suburb → `only 19 suburbs have a price`；
+金额单位变了导致整体除以 3 → `median suburb value moved 66%, tolerance 30%`。
+
+### 改成追加式的数据契约
+
+按月跑之前，原来的 schema 有两个硬伤，都改掉了：
+
+1. **`build_db.py` 原来是 drop 重建**，按月跑只会覆盖不会积累。现在
+   `market_snapshot` 和 `valuation` 是**追加表**，按数据源自己的发布日期做主键 ——
+   源没更新就一行不插，源发新版就每个 suburb 追加一行。攒下来的时间序列才是月度任务的价值。
+2. **`cv_2021` / `cv_2024` 写死成列**，2027 年下一轮重估就得改表。现在估价是长表
+   `valuation(ru_id, valuation_date, cv, lv)`，下一轮只是 INSERT。
+   `rating_unit_current` 视图取最新一轮（重估是全区同步的，所以这是个等值过滤，不是窗口函数）。
+
+`suburb` 和 `rating_unit` 是缓变参考数据，每次重建，但 `first_seen` 会带过来。
+
+### 每次构建新库再原子替换
+
+`build_db.py` 先写 `auckland.duckdb.building`，通过 `ATTACH` 把历史从旧库搬过来，
+最后 `os.replace`。两个原因：
+
+- DuckDB 的 `CREATE OR REPLACE TABLE` 会整表重写且**不回收旧块**。原地构建时，一次
+  什么都没变的空跑也会让文件从 192 MB 涨到 215 MB。改成换文件后稳定在 ~96 MB。
+- DuckDB 的写锁**排斥读**。构建期间旧文件一直可读，换过去那一刻才切，正在查的进程
+  握着旧 inode 不受影响。
+
+`heatmap.html` 同理：先写 `.building` 再 rename，浏览器里开着的页面不会读到半截文件。
+
+### 日志和状态
+
+```bash
+python3 scripts/pipeline.py status
+```
+
+- `logs/pipeline.jsonl` —— 每次运行一行，即使数据库挂了也写得进去
+- `pipeline_run` / `pipeline_step` 表 + `pipeline_status` 视图 —— 每个源最后一次成功
+  是什么时候、多少行、是否到期、失败原因
+
+### 调度：launchd
+
+```bash
+./ops/install-schedule.sh          # 装到 ~/Library/LaunchAgents（不需要 sudo）
+./ops/install-schedule.sh --status
+./ops/install-schedule.sh --remove
+```
+
+每月 2 号 06:10 跑。**用 launchd 不用 cron**：合盖错过的任务，launchd 会在唤醒后补跑，
+cron 直接跳过这个月。代价是关机期间不跑。
+
+立刻手动触发一次：
+
+```bash
+launchctl kickstart -p gui/$(id -u)/com.sunqi.auckland-pipeline
+```
+
+### 上云的口子
+
+`scripts/` 里没有任何 macOS 专属代码，路径全部走 `AKL_ROOT` / `AKL_RAW_DIR` /
+`AKL_OUT_DIR` / `AKL_DB` 环境变量。搬到 CI 只需要换掉 `ops/` 里的调度器，
+`ops/github-actions.yml.example` 是现成的模板。
+
+真正要先想清楚的是**状态放哪**：追加的历史在 ~96 MB 的 duckdb 里，每月提交进仓库不现实。
+模板里列了三条路，推荐第 (b) 条 —— 把 `data/raw` 快照推到对象存储，每次从快照重建库，
+这跟本项目现有的「raw 是唯一真源头」模型一致。
+
+## 数据库：DuckDB
+
+`data/auckland.duckdb`，59 MB，六张表一个视图：
+
+| 表 | 行数 | 内容 |
+|---|---|---|
+| `suburb` | 286 | LINZ 多边形 + 质心 + 面积，所有东西挂在它上面 |
+| `suburb_market` | 205 | Opes 的估值、租金、回报、成交、户型比例 |
+| `suburb_price_history` | 5,070 | 2000 年至今的年度估值序列 |
+| `suburb_description` | 204 | 维基百科简介 |
+| `rating_unit` | 623,765 | 逐地块：估价号、地址、地块面积、2021/2024 两次 CV 与 LV、坐标 |
+| `meta` | 8 | 各数据源的口径与日期 |
+| `suburb_overview`（视图） | 286 | 上面几张表拼好的一行一区，大部分问题查它就够 |
+
+`rating_unit.suburb_id` 在建库时就用点在多边形内算好了，所以后续查询都是普通 join，
+不用每次跑空间运算。62.4 万条里 3,475 条（0.6%）不落在任何 suburb 内。
+
+### 为什么选它
+
+- **零运维**：`pip install duckdb`，单个文件，没有服务端、没有守护进程、没有配置。
+- **空间扩展装得动**：`INSTALL spatial` 是一行 SQL，自带二进制，不需要 homebrew、
+  不需要系统装 GDAL。对比 SpatiaLite：要 `brew install libspatialite`，然后
+  `mod_spatialite.dylib` 的架构还得和你的 Python 对上 —— anaconda + arm64 这组合是
+  经典翻车点（顺带一提，这台机器的 anaconda Python 确实允许 `enable_load_extension`，
+  所以 SpatiaLite 路线不是不通，只是麻烦）。
+- **查询形态对口**：这个项目实际要跑的是「按区求 CV 中位数/分位数/直方图」这类分析查询，
+  正好是列存 + 向量化执行的主场。`median`、`quantile_cont`、`histogram` 都是内置的。
+- **直接读原始文件**：`ST_Read('*.geojson')`、`read_json_auto('*.jsonl.gz')`，
+  建库脚本基本就是几段 SQL，不用写解析层。
+- **对 agent 友好**：给它一个 SQL 工具就够了，schema 小到能整个塞进 prompt。
+
+实测（62.4 万行，M 系列 Mac）：建库 20 秒，示例查询 6–35 ms。
+
+### 代价
+
+1. **写锁是排他的**。实测：两个只读进程可以并存；但只要有一个写连接开着，
+   **其他进程连读都进不来**（`IO Error: Could not set lock on file`）。所以
+   `build_db.py` 跑的时候不能有查询会话开着。真要做成多人写的服务，这条就是硬伤。
+2. **不是 OLTP**。逐行 UPDATE 会重写整表且不回收旧块 —— 我第一版用 `UPDATE` 填
+   `suburb_id`，文件 104 MB；改成在 `CREATE TABLE ... AS` 里 join 出来，59 MB，
+   同样的数据。以后存用户状态（收藏、笔记）不要塞进这个库。
+3. **空间函数有坑**。duckdb-spatial 1.5.5 里 `ST_Distance_Spheroid` 返回 `nan`，
+   `ST_DWithin_Spheroid` 恒为 `false`。**用球面版 `ST_Distance_Sphere`**（已验证正确：
+   -36.84 纬度上 0.01° 经度 = 1111.9 m）。示例查询里都改过来了。
+4. **R-tree 在这个量级上不划算**。实测半径 1.5 km 查询：全表扫描 + `ST_Distance_Sphere`
+   22 ms，走 R-tree 的 `ST_Within` 反而 50 ms，而索引本身要 40 MB。所以
+   `rating_unit` 上没建 R-tree，加回来是一行的事（数据量涨一个数量级再说）。
+5. **GIS 生态比 PostGIS 小**：没有拓扑、没有栅格、没有路径规划。以后要算通勤等时圈或
+   叠洪水栅格图层，这里做不了。
+6. **没有内置向量检索**。想对简介做语义搜索，`vss` 扩展还偏实验性。
+7. **文件格式向前不兼容**：新版本写的库老版本打不开。缓解办法是 `data/raw/` 才是
+   真源头，这个库随时可以删掉重建（`build_db.py` 就是每次 drop 重来）。
+
+### 什么时候该换
+
+- 变成多人写的 Web 服务，或者要算等时圈 / 路径 / 栅格 → **PostgreSQL + PostGIS**。
+  今天不上是因为要多养一个服务端，而在笔记本上跑的工具里换不来任何好处。
+  schema 和加载脚本九成可以直接搬。
+- 只是要小量高频读写的应用状态（收藏、笔记、会话）→ 单独开一个 **SQLite** 文件，
+  别和分析库混在一起。
+- 要把数据发给别人 / 进 git → 导出 **Parquet**。但 Parquet 没有索引、没有几何类型，
+  当交换格式可以，当工作库不行。
+- 这台机器上装了 **MongoDB**，它也有地理索引；但 62 万行求分位数用聚合管道写起来又
+  笨又慢，而且 agent 没法用 SQL。这个场景不合适。
+
+## 区内热力图怎么算的
+
+1. 62.4 万个计税单元按**点在多边形内**判定归属（不是用地址里的 suburb 字段）——
+   地图画的是 LINZ 多边形，点必须和多边形一致。61.7 万个成功落入某个 suburb。
+2. 每个 suburb 内按 **35 米方格**聚合，取格内 CV 中位数。这一步也顺便把 cross-lease
+   公寓（同一个地块中心点的多个单元）合并掉了。
+3. 道路、绿地等格内没有地块，细网格会呈现为散点而不是面。因此做 2 轮补洞：空格若周围
+   有 ≥3 个相邻格有值，就取邻格中位数。其余留空（显示为底色）。补出来的格约占四成，
+   这是**插值不是实测**。
+4. 色阶中点是**该 suburb 自身的** CV 中位数，两端是区内 10/90 分位。所以每个区都用满
+   整条色带，**不同区之间的颜色不能横向比较**——跨区比较请看全区图。
+
+## 已知口径问题
+
+1. **`price` 是估值均值，不是成交中位价。** 同期全奥克兰成交中位价为 $980,000
+   （REINZ 口径），而本数据集 205 个郊区估值的中位数是 $1,165,950。两者不可直接比较：
+   前者按成交量加权、只看实际卖出的房子，后者对每个郊区等权、覆盖全部存量住宅。
+   地图上的中点用的是后者。
+2. **覆盖不全。** 286 个郊区/地区中 205 个有价格。缺失的多为农村、林地、机场、医院，
+   但也包括 Western Springs、Westgate、Hillpark、Wairau Valley、Lucas Heights、
+   Tōtara Park 等真实住宅区——价格源本身没收录。
+3. **大堡岛（Aotea / Great Barrier）未绘制**：LINZ 郊区图层没有把该岛细分为
+   suburb/locality，且无价格数据。Waiheke 已按 Oneroa / Ostend / Surfdale 等分区绘制。
+4. **单一数据源。** suburb 层面的价格来自一家（其底层为自动估值模型）。好消息是
+   议会 CV 是完全独立的第二来源，两者的中位数比值中位数为 **1.01**，互相印证。
+5. **CV 含全部计税单元**，不只住宅。公寓密集处成片低值（那是"一套公寓多少钱"），
+   Penrose 这类工业区、Western Springs 这类以公园/球场为主的多边形，CV 中位数会
+   明显偏离住宅口径。看区内热力图时要留意这一点。
+6. **授权。** 议会的逐地块估价可在其网站免费查询，这个要素服务也是公开无鉴权的；
+   但议会另有收费的 RID 批量数据产品。本项目按个人研究用途使用，
+   **若要商用或对外分发这份数据，需先向 Auckland Council 确认授权。**
+
+## 配色说明
+
+发散色阶，蓝 ↔ 红，中性灰为中点——不是彩虹色阶。蓝臂取自一条标准蓝色 sequential
+ramp，红臂在 OKLCH 空间镜像每一档的明度与彩度，因此两侧感知强度对称。明暗主题各有
+一套色阶：亮色主题中点最亮、两端加深；暗色主题中点为中灰（对 `#1a1a19` 底色仍有
+2:1 对比），两端提亮。无数据用 45° 斜纹而非纯灰，避免与"接近中位价"的中性灰混淆。
+
+## 下一步
+
+- [x] ~~点开 suburb 看简介 + 区内房价热力图~~
+- [x] ~~本地数据库 + 每月自动刷新~~
+- [ ] 攒够几期 `market_snapshot` 后，在详情页加一条「我们自己观测到的」价格曲线
+      （现在图上那条是数据源给的历史，不是我们采集的）
+- [ ] 区内热力图加住宅口径过滤（用 Unitary Plan 分区图层剔除商业/工业地块）
+- [ ] 交叉验证价格（REINZ / QV / homes.co.nz），给每个 suburb 一个置信度
+- [ ] 接入在售房源（Trade Me Property / realestate.co.nz）
+- [ ] 加入通勤时间、学区（decile / in-zone 学校）、洪水与滑坡风险图层
+- [ ] Agent 层：把 `suburb_prices.csv` 加上上述图层做成检索工具，按预算 + 通勤 +
+      学区 + 户型给候选 suburb 排序

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sunqi.auckland-pipeline</string>
+
+  <!-- launchd, not cron: if the Mac is asleep at 06:10 on the 2nd, launchd
+       runs the job as soon as it wakes. cron would simply skip the month. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>__ROOT__/scripts/pipeline.py</string>
+    <string>run</string>
+    <string>--trigger</string>
+    <string>schedule</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__ROOT__</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Day</key><integer>2</integer>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>10</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- Network fetches; do not let a stuck request hold a slot forever. -->
+  <key>ExitTimeOut</key>
+  <integer>1800</integer>
+
+  <key>StandardOutPath</key>
+  <string>__ROOT__/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__ROOT__/logs/launchd.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+</dict>
+</plist>
