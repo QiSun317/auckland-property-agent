@@ -16,7 +16,10 @@
  * an open model endpoint is the one editing the client.
  */
 
-const MODEL = 'gemini-2.5-flash-lite';
+// Model ids get retired for new keys — 2.5-flash-lite already was. The
+// upstream error says so plainly, and MODEL is a var in wrangler.toml so
+// swapping it is a config change, not a code change.
+const MODEL = 'gemini-3.5-flash-lite';
 const MAX_CHARS = 400;
 
 // Same rule as the page: this shortlists Auckland suburbs against a budget and
@@ -100,6 +103,19 @@ export default {
 
     if (!env.GEMINI_API_KEY) return json({ error: 'proxy not configured' }, 500, headers);
 
+    // {"models":true} lists what this key can actually reach. Model ids move
+    // between releases and a 404 from generateContent does not say which part
+    // of the path was wrong.
+    if (body.models === true) {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${env.GEMINI_API_KEY}&pageSize=200`);
+      const j = await r.json().catch(() => ({}));
+      return json({ status: r.status,
+                    models: (j.models || [])
+                      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+                      .map(m => m.name.replace('models/', '')) }, 200, headers);
+    }
+
     const upstream = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${
         env.MODEL || MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
@@ -115,10 +131,13 @@ export default {
 
     if (!upstream.ok) {
       const detail = await upstream.text();
-      // Never pass the upstream body straight through: it can echo the key.
-      return json({ error: `upstream ${upstream.status}`,
-                    hint: detail.includes('quota') ? 'free quota exhausted' : undefined },
-                  502, headers);
+      // Surface enough to diagnose, but scrub anything key-shaped first: the
+      // upstream body is not trusted to be free of it.
+      const safe = detail
+        .replace(/AIza[0-9A-Za-z_\-]{10,}/g, '[redacted]')
+        .replace(/key=[^&"'\s]+/g, 'key=[redacted]')
+        .slice(0, 300);
+      return json({ error: `upstream ${upstream.status}`, detail: safe }, 502, headers);
     }
 
     const j = await upstream.json();

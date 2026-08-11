@@ -15,7 +15,16 @@ import unicodedata
 from pathlib import Path
 from statistics import median
 
-import duckdb
+try:
+    import duckdb
+except ModuleNotFoundError:  # noqa: TRY003 - the message is the point
+    import sys
+    sys.exit(
+        f"duckdb is not installed for this interpreter.\n"
+        f"  running: {sys.executable}\n"
+        f"  fix:     {sys.executable} -m pip install duckdb\n"
+        f"(a shell whose python3 resolves elsewhere will hit this even though\n"
+        f" another interpreter on the machine has it)")
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = Path(os.environ.get("AKL_RAW_DIR", ROOT / "data" / "raw"))

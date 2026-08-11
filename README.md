@@ -24,7 +24,10 @@ python3 scripts/q.py "SELECT name, avg_house_value FROM suburb_overview ORDER BY
 四个 `fetch_*` 只需在数据要更新时重跑；改样式只跑最后两个（`build_detail.py`
 在边界或估价变了才需要重跑）。
 
-只有 Python 3 标准库，无第三方依赖。生成后直接用浏览器打开 `heatmap.html`
+需要 `duckdb`（`python3 -m pip install duckdb`）。注意**装到哪个解释器**上 ——
+这台机器上 `/opt/anaconda3/bin/python3` 有，`/usr/bin/python3` 没有，
+终端里的 `python3` 指向哪个取决于 PATH。装错了脚本会直接告诉你当前解释器路径和修复命令。
+生成后直接用浏览器打开 `heatmap.html`
 （单文件，无外部请求）。
 
 ## 产出
@@ -242,6 +245,17 @@ Papakura 是 **91%**。只看均价是看不出这个差别的。
 > 按这些条件没有匹配的郊区。
 > 放宽其中一条就有结果：**区域限制**（1 个）、**独立地块要求**（3 个）
 > 其余条件不变的话，最低门槛在 **Panmure**，那里 25% 分位的 CV 是 $720,000
+
+### 线上模型层（已部署）
+
+代理跑在 `https://auckland-suburb-agent.qisun317.workers.dev`，Gemini key 作为
+Cloudflare secret 存在那儿，**页面里没有任何密钥**（构建后用 `grep AIza heatmap.html` 可自查）。
+访客默认走这条，不用自带 key。
+
+踩到的坑：`gemini-2.5-flash-lite` **对新 key 已经停用**，报的是 `upstream 404`。
+所以 Worker 现在会把上游错误原文透出来（先把 `AIza...` 和 `key=` 洗掉），
+一次调用就能看清是模型 ID 的问题还是配额问题。模型 ID 是 `wrangler.toml` 里的
+`MODEL` 变量，换代只需改配置重新 deploy，不用动代码。当前用 `gemini-3.5-flash-lite`。
 
 ### 免费模型怎么接
 
