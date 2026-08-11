@@ -15,6 +15,8 @@ import unicodedata
 from pathlib import Path
 from statistics import median
 
+import duckdb
+
 ROOT = Path(__file__).resolve().parent.parent
 RAW = Path(os.environ.get("AKL_RAW_DIR", ROOT / "data" / "raw"))
 DATA = ROOT / "data"
@@ -155,6 +157,30 @@ def build_paths(features):
     return paths, boxes, height, to_view, scale
 
 
+def quantiles(vals, qs):
+    v = sorted(x for x in vals if x is not None)
+    if not v:
+        return {q: None for q in qs}
+    return {q: v[min(len(v) - 1, int(q * len(v)))] for q in qs}
+
+
+def reference_stats(rows):
+    """Region-wide reference points. Without these the assistant can say a
+    number but not whether it is good, and 'high yield' with no baseline is
+    the sort of claim that reads as insight and isn't."""
+    priced = [r for r in rows if r["price"]]
+    out = {}
+    for key, field in [("price", "price"), ("yield", "yield"), ("rent", "rent"),
+                       ("growth", "growth"), ("days", "days"), ("sold", "sold")]:
+        q = quantiles([r[field] for r in priced], (0.25, 0.5, 0.75))
+        out[key] = {"p25": q[0.25], "p50": q[0.5], "p75": q[0.75]}
+    dens = [round(r["pop"] / r["area_km2"]) for r in priced
+            if r.get("pop") and r.get("area_km2")]
+    q = quantiles(dens, (0.25, 0.5, 0.75))
+    out["density"] = {"p25": q[0.25], "p50": q[0.5], "p75": q[0.75]}
+    return out
+
+
 def history(rec):
     """Yearly price series -> [firstYear, [values in $1000]] (compact + enough
     resolution for a sparkline)."""
@@ -172,6 +198,28 @@ def main():
     wiki = json.loads((RAW / "wikipedia.json").read_text())
     detail = json.loads((DATA / "suburb_detail.json").read_text())
     dsub = detail["suburbs"]
+
+    # Geography and typical section size come from the database, where the
+    # spatial joins already happened.
+    con = duckdb.connect(str(DATA / "auckland.duckdb"), read_only=True)
+    con.execute("LOAD spatial;")
+    geo_by_name = {r[0]: {"lb": r[1], "z": r[2], "km": r[3], "area": r[4]}
+                   for r in con.execute(
+                       "SELECT name, local_board, zone, cbd_km, area_km2 "
+                       "FROM suburb").fetchall()}
+    # Median section size, plus the share of the suburb that is a standalone
+    # section at all. Bedroom mix hints at this; land area states it. A 0 m2
+    # land area is a unit-title flat, which is exactly what someone asking for
+    # a house with a yard does not want.
+    land_by_name = {r[0]: {"la": r[1], "hs": r[2]} for r in con.execute("""
+        SELECT s.name,
+               median(r.land_area_m2) FILTER (
+                   WHERE r.land_area_m2 BETWEEN 100 AND 5000)::INT AS land_median,
+               round(count(*) FILTER (WHERE coalesce(r.land_area_m2, 0) >= 300)
+                     / count(*)::DOUBLE, 3) AS house_share
+        FROM rating_unit r JOIN suburb s USING (suburb_id)
+        GROUP BY 1""").fetchall()}
+    con.close()
 
     by_name = {norm(p["suburb_name"]): p
                for p in prices if p["suburb_name"] not in DROP_SUBURBS}
@@ -196,6 +244,7 @@ def main():
             "type": a["type"],
             "major": a.get("major_name") or "",
             "pop_linz": a.get("population_estimate"),
+            "area_km2": None,   # filled from geo below
             "path": path,
             "box": box,
             "price": (p or {}).get("average_house_price"),
@@ -217,9 +266,14 @@ def main():
             "bedrent": [(p or {}).get(f"{k}_bedroom_rent")
                         for k in ("one", "two", "three", "four")],
             "hist": history(p) if p else None,
+            "geo": geo_by_name.get(a["name"], {}),
+            "land": land_by_name.get(a["name"]) or {},
             "wiki": wiki.get(a["name"]) or (wiki.get(p["suburb_name"]) if p else None),
             "detail": dsub.get(a["name"]),
         })
+
+    for r in rows:
+        r["area_km2"] = r["geo"].get("area")
 
     unmatched = [p["suburb_name"] for k, p in by_name.items() if k not in used]
     no_price = [r["name"] for r in rows if not r["price"]]
@@ -274,6 +328,7 @@ def main():
         "lastUpdated": LAST_UPDATED,
         "rampLight": ramp_lut(RAMP_LIGHT),
         "rampDark": ramp_lut(RAMP_DARK),
+        "ref": reference_stats(rows),
         "valuationDate": detail["valuationDate"],
         "prevValuationDate": detail["prevValuationDate"],
         "unitsMatched": detail["unitsMatched"],
@@ -298,6 +353,12 @@ def main():
             "h": r["hist"],
             "w": r["wiki"],
             "dt": r["detail"],
+            "lb": r["geo"].get("lb"),
+            "z": r["geo"].get("z"),
+            "km": r["geo"].get("km"),
+            "la": r["land"].get("la"),
+            "hs": r["land"].get("hs"),
+            "ar": r["geo"].get("area"),
         } for r in sorted(rows, key=lambda r: r["name"])],
     }
 

@@ -98,6 +98,14 @@ def check_valuations(path, prev):
     return n
 
 
+def check_localboards(path, prev):
+    fc = json.loads(path.read_text())
+    n = len(fc.get("features", []))
+    if n != 21:
+        raise Reject(f"{n} local boards, expected exactly 21")
+    return n
+
+
 def check_wikipedia(path, prev):
     d = json.loads(path.read_text())
     good = [v for v in d.values() if (v.get("extract") or "").strip()]
@@ -127,6 +135,8 @@ SOURCES = [
            "council CVs; set on a 3-year revaluation cycle, corrections in between"),
     Source("boundaries", "fetch_boundaries.py", "auckland_boundaries.geojson", 90,
            check_boundaries, "LINZ edits suburb boundaries a few times a year"),
+    Source("localboards", "fetch_localboards.py", "local_boards.geojson", 365,
+           check_localboards, "council local boards; redrawn only at reorganisation"),
     Source("wikipedia", "fetch_wikipedia.py", "wikipedia.json", 180,
            check_wikipedia, "suburb intros; near-static"),
 ]

@@ -9,20 +9,27 @@ WHERE avg_house_value BETWEEN 900000 AND 1200000
   AND est_gross_yield_pct > 3 AND sold_last_12m > 50
 ORDER BY est_gross_yield_pct DESC;
 
--- 2. Everything within 1.5 km of a point, by walk-up distance.
---    Use ST_Distance_Sphere, NOT ST_Distance_Spheroid: the spheroid variants
---    return nan / always-false in duckdb-spatial 1.5.5.
-SELECT s.name, count(*) AS units, median(r.cv_2024)::BIGINT AS cv_median
-FROM rating_unit r JOIN suburb s USING (suburb_id)
-WHERE ST_Distance_Sphere(r.geom, ST_Point(174.7645, -36.8443)) <= 1500
+-- 2. Everything within 1.5 km of a point.
+--    Project to NZTM (metres) rather than using ST_Distance_Sphere /
+--    ST_Distance_Spheroid: those follow EPSG:4326's declared (lat, lon) axis
+--    order, so passing the (lon, lat) points stored here returns nan, or worse,
+--    a plausible-looking wrong number. always_xy pins the input order.
+WITH nztm AS (SELECT 'EPSG:4326' AS src, 'EPSG:2193' AS dst)
+SELECT s.name, count(*) AS units, median(v.cv)::BIGINT AS cv_median
+FROM rating_unit_current v JOIN suburb s USING (suburb_id)
+JOIN rating_unit r USING (ru_id), nztm
+WHERE ST_Distance(
+        ST_Transform(r.geom, src, dst, always_xy := true),
+        ST_Transform(ST_Point(174.7645, -36.8443), src, dst, always_xy := true)
+      ) <= 1500
 GROUP BY 1 ORDER BY units DESC;
 
 -- 3. Street-level medians inside one suburb
 SELECT trim(regexp_replace(split_part(address, ',', 1),
              '^[0-9]+[A-Za-z]?(/[0-9]+[A-Za-z]?)?\s*', '')) AS street,
-       count(*) AS n, median(cv_2024)::BIGINT AS cv_median
-FROM rating_unit r JOIN suburb s USING (suburb_id)
-WHERE s.name = 'Remuera' AND cv_2024 IS NOT NULL
+       count(*) AS n, median(cv)::BIGINT AS cv_median
+FROM rating_unit_current r JOIN suburb s USING (suburb_id)
+WHERE s.name = 'Remuera' AND cv IS NOT NULL
 GROUP BY 1 HAVING count(*) >= 25
 ORDER BY cv_median DESC;
 

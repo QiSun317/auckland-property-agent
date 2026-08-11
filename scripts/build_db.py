@@ -39,6 +39,30 @@ DB = Path(os.environ.get("AKL_DB", DATA / "auckland.duckdb"))
 
 VALUATION_ROUNDS = {"cv_2021": "2021-06-01", "cv_2024": "2024-05-01"}
 
+# Britomart, for "how far out is this" distances.
+CBD = (174.7645, -36.8443)
+
+# Distances and areas go through NZTM (EPSG:2193, metres) rather than the
+# ST_*_Spheroid family. Those functions follow EPSG:4326's declared axis order,
+# which is (lat, lon) — feed them the (lon, lat) points everything else uses and
+# ST_Area_Spheroid returns NaN while ST_Distance_Sphere silently returns a
+# plausible-looking wrong number. always_xy pins the input order explicitly.
+TO_NZTM = "ST_Transform({}, 'EPSG:4326', 'EPSG:2193', always_xy := true)"
+
+# The 21 local boards grouped the way Aucklanders actually talk about the city.
+ZONES = {
+    "北岸": ["Hibiscus and Bays", "Upper Harbour", "Kaipatiki", "Devonport - Takapuna"],
+    "西区": ["Henderson - Massey", "Waitakere Ranges", "Whau"],
+    "中区": ["Waitemata", "Albert - Eden", "Puketapapa", "Orakei",
+             "Maungakiekie - Tamaki"],
+    "东区": ["Howick"],
+    "南区": ["Mangere - Otahuhu", "Otara - Papatoetoe", "Manurewa", "Papakura",
+             "Franklin"],
+    "北部乡村": ["Rodney"],
+    "海岛": ["Waiheke", "Great Barrier"],
+}
+BOARD_ZONE = {b: z for z, bs in ZONES.items() for b in bs}
+
 
 def norm(s):
     s = unicodedata.normalize("NFKD", s or "")
@@ -161,7 +185,7 @@ def main():
                name, name_ascii, type, major_name, territorial_authority,
                population_estimate AS population_linz,
                geom, ST_Centroid(geom) AS centroid,
-               round(ST_Area_Spheroid(geom) / 1e6, 3) AS area_km2
+               round(ST_Area(ST_Transform(geom, 'EPSG:4326', 'EPSG:2193', always_xy := true)) / 1e6, 3) AS area_km2
         FROM ST_Read('{RAW / "auckland_boundaries.geojson"}');
     """)
     if fresh:
@@ -173,6 +197,43 @@ def main():
             SELECT n.*, coalesce(o.first_seen, current_date) AS first_seen
             FROM suburb_new n LEFT JOIN prev.suburb o USING (name);""")
     con.execute("DROP TABLE suburb_new")
+
+    # Which local board each suburb sits in, plus how far out it is. Centroid
+    # rather than overlap: a suburb belongs to exactly one board, and the
+    # centroid is the cheap unambiguous answer.
+    con.execute(f"""
+        ALTER TABLE suburb ADD COLUMN local_board TEXT;
+        ALTER TABLE suburb ADD COLUMN zone TEXT;
+        ALTER TABLE suburb ADD COLUMN cbd_km DOUBLE;
+    """)
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE lb AS
+        SELECT BOARD AS board, geom FROM ST_Read('{RAW / "local_boards.geojson"}');
+    """)
+    con.execute("""
+        CREATE OR REPLACE TABLE suburb AS
+        SELECT s.* EXCLUDE (local_board, zone, cbd_km),
+               b.board AS local_board,
+               NULL::TEXT AS zone,
+               round(ST_Distance(
+                   ST_Transform(s.centroid, 'EPSG:4326', 'EPSG:2193', always_xy := true),
+                   ST_Transform(ST_Point(?, ?), 'EPSG:4326', 'EPSG:2193', always_xy := true)
+               ) / 1000, 1) AS cbd_km
+        FROM suburb s
+        LEFT JOIN lb b ON ST_Intersects(b.geom, s.centroid);
+    """, [CBD[0], CBD[1]])
+
+    # A handful of coastal/island centroids fall outside every board polygon;
+    # fall back to the nearest board rather than leaving them unplaced.
+    con.execute("""
+        UPDATE suburb SET local_board = (
+            SELECT b.board FROM lb b
+            ORDER BY ST_Distance(b.geom, suburb.centroid) LIMIT 1)
+        WHERE local_board IS NULL;
+    """)
+    zone_cases = " ".join(
+        f"WHEN local_board = '{b}' THEN '{z}'" for z, bs in ZONES.items() for b in bs)
+    con.execute(f"UPDATE suburb SET zone = CASE {zone_cases} ELSE NULL END")
 
     key = {norm(name): i for i, name in
            con.execute("SELECT suburb_id, coalesce(name_ascii, name) FROM suburb")
@@ -303,6 +364,7 @@ def main():
 
     CREATE OR REPLACE VIEW suburb_overview AS
     SELECT s.suburb_id, s.name, s.type, s.area_km2,
+           s.local_board, s.zone, s.cbd_km,
            m.source_as_at AS market_as_at,
            m.avg_house_value, m.change_1y, m.long_term_growth_pct,
            m.median_weekly_rent, m.est_gross_yield_pct, m.population,

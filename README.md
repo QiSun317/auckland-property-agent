@@ -70,6 +70,9 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 - **政府估价 CV**：Auckland Council 的 `AGOL_RateAccountInfo1_gdb` 要素服务
   （公开、无需鉴权），逐计税单元给出 `CV/LV`（2021-06-01 估值）与 `LCV/LLV`
   （2024-05-01 重估）。用 `returnCentroid=true` 只取地块中心点，避免拉 62 万个多边形。
+- **行政区划**：Auckland Council `Local_Board_boundaries_view`，21 个 local board。
+  每个 suburb 按质心归属到一个 board，再归并成「北岸 / 西区 / 中区 / 东区 / 南区 /
+  北部乡村 / 海岛」—— 这是奥克兰人真正在用的地理心智模型，用户说「想住东区」才有得匹配。
 - **简介**：英文维基百科 API，CC BY-SA 4.0。标题有歧义（Albany 是纽约州的城市），
   所以按 `{名}, Auckland` → `{名}, New Zealand` → `{名}` 依次尝试，并用条目坐标与
   suburb 中心点的距离（≤20 km）核验后才采纳。
@@ -89,6 +92,7 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 | `prices` | 30 天 | Opes 大约季度级刷新 |
 | `valuations` | 90 天 | 议会 CV 是三年一轮重估（2021 → 2024 → 约 2027），期间只有零星更正 |
 | `boundaries` | 90 天 | LINZ 一年改几次 |
+| `localboards` | 365 天 | 议会 21 个 local board，只在行政区划调整时才变 |
 | `wikipedia` | 180 天 | 几乎不动 |
 
 `pipeline.py run` 每次只抓到期的；`--force prices` 或 `--force all` 可以强制。
@@ -167,6 +171,64 @@ launchctl kickstart -p gui/$(id -u)/com.sunqi.auckland-pipeline
 模板里列了三条路，推荐第 (b) 条 —— 把 `data/raw` 快照推到对象存储，每次从快照重建库，
 这跟本项目现有的「raw 是唯一真源头」模型一致。
 
+## 选房助手
+
+页面右下角的悬浮面板。用中文描述需求，它按**预算优先**筛出郊区、说明每个区的优缺点，
+并自动打开第一名的区内热力图。
+
+### 预算是硬门槛，不是权重
+
+用户给出预算 B 之后，问题不是"这个区均价是多少"，而是**"B 在这个区能买到多少房子"**。
+每个 suburb 的详情数据里带着一条 24 格对数分箱的 CV 直方图，所以这是一次 CDF 查询：
+
+```
+affordShare(区, B) = 该区 CV ≤ B 的计税单元占比
+```
+
+- `affordShare < 20%` → 直接排除，不进候选
+- 打分曲线在 60–75% 处最高：低于此选择面太窄，高于 93% 说明预算明显高出这个区，
+  会被提示「可能买得比需要的更便宜」
+
+举个对比：预算 120 万时，Remuera 的 `affordShare` 是 **18%**（排除），
+Papakura 是 **91%**。只看均价是看不出这个差别的。
+
+### 优缺点必须挂在数字上
+
+每条优缺点都由规则从数据算出，并和全区四分位基准比较，没有一句是模型写的：
+
+> ＋ 预算内可选约 68% 的房子（区内 2,101 个计税单元）
+> ＋ 长期年化增长 6.1%，全区前 25%
+> ＋ 71% 的房源是 ≥300 m² 的独立地块（中位 675 m²）
+> － 2021→2024 政府重估下调 13%
+> － 区内价差大（中间 50% 落在 $210k–$630k），街区选择很关键
+
+其中「独立地块占比」是专门为此加的指标，因为**地块中位数会骗人**：Auckland Central
+有地块的房源中位数是 626 m²，看着不小，但只有 **2.6%** 的房源有独立地块，其余全是公寓。
+所以「要独立屋带院子」是硬过滤条件（占比 <20% 直接排除），不是加分项。
+
+### 它会明确说自己不知道
+
+问到**学区、治安、族裔构成、洪水风险**，助手会直说这些数据不在数据集里、
+推荐没有纳入考虑，而不是拿别的指标搪塞。这几项都在下一步的清单上。
+
+条件无解时也不硬凑，而是诊断是哪一条在卡：
+
+> 按这些条件没有匹配的郊区。
+> 放宽其中一条就有结果：**区域限制**（1 个）、**独立地块要求**（3 个）
+> 其余条件不变的话，最低门槛在 **Panmure**，那里 25% 分位的 CV 是 $720,000
+
+### 模型是可选的，而且管不到数字
+
+不填 API key 也完全可用：本地正则解析中英文需求，本地打分排序，本地生成优缺点。
+
+填了 key（Anthropic）之后，模型**只做两件事**：读懂比较口语化的需求描述、写一句开场白。
+系统提示里明确禁止它推荐郊区或给出任何数字 —— 候选集、排序、每一个数都由页面从本地数据算，
+所以它没有编造的余地。调用失败会自动退回本地规则并提示。
+
+Key 存在浏览器 localStorage，**不写进 `heatmap.html`，也不进 git**。
+不过这终究是把密钥放在本机的一个静态页面里，安全性等同于你这台电脑；
+要更稳妥就在本地起一个小代理持有密钥，页面只调本地地址。
+
 ## 数据库：DuckDB
 
 `data/auckland.duckdb`，59 MB，六张表一个视图：
@@ -208,9 +270,16 @@ launchctl kickstart -p gui/$(id -u)/com.sunqi.auckland-pipeline
 2. **不是 OLTP**。逐行 UPDATE 会重写整表且不回收旧块 —— 我第一版用 `UPDATE` 填
    `suburb_id`，文件 104 MB；改成在 `CREATE TABLE ... AS` 里 join 出来，59 MB，
    同样的数据。以后存用户状态（收藏、笔记）不要塞进这个库。
-3. **空间函数有坑**。duckdb-spatial 1.5.5 里 `ST_Distance_Spheroid` 返回 `nan`，
-   `ST_DWithin_Spheroid` 恒为 `false`。**用球面版 `ST_Distance_Sphere`**（已验证正确：
-   -36.84 纬度上 0.01° 经度 = 1111.9 m）。示例查询里都改过来了。
+3. **空间函数的轴序陷阱（我第一次判断错了，这里是更正）**。
+   `ST_Distance_Spheroid` / `ST_Area_Spheroid` / `ST_Transform` 都遵循 EPSG:4326 的
+   **官方轴序 (lat, lon)**，而项目里所有点都按 (lon, lat) 存。传错顺序的结果不是报错：
+   `ST_Area_Spheroid` 全部返回 `nan`，`ST_Distance_Sphere` 则返回一个**看起来很合理的错数**
+   （0.01° 经度 @ -36.84 应为 891.9 m，它给 1111.9 m —— 把经度当成了纬度，漏掉了
+   cos(纬度) 修正）。我一开始把它当成"扩展有 bug"，其实是我传错了。
+   **正解：投影到 NZTM 再算**，彻底绕开轴序：
+   `ST_Transform(geom, 'EPSG:4326', 'EPSG:2193', always_xy := true)`，
+   之后用普通的 `ST_Area` / `ST_Distance`，单位是米。已验证：Takapuna 距市中心 6.2 km、
+   Pukekohe 41.4 km，与实际直线距离相符。
 4. **R-tree 在这个量级上不划算**。实测半径 1.5 km 查询：全表扫描 + `ST_Distance_Sphere`
    22 ms，走 R-tree 的 `ST_Within` 反而 50 ms，而索引本身要 40 MB。所以
    `rating_unit` 上没建 R-tree，加回来是一行的事（数据量涨一个数量级再说）。
@@ -277,6 +346,9 @@ ramp，红臂在 OKLCH 空间镜像每一档的明度与彩度，因此两侧感
 - [x] ~~本地数据库 + 每月自动刷新~~
 - [ ] 攒够几期 `market_snapshot` 后，在详情页加一条「我们自己观测到的」价格曲线
       （现在图上那条是数据源给的历史，不是我们采集的）
+- [x] ~~页面内嵌选房助手，预算优先 + 优缺点 + 自动打开对应热力图~~
+- [ ] 补上助手现在会明确拒答的维度：学区（Ministry of Education 校网边界）、
+      洪水与滑坡风险（议会图层）、治安（NZ Police 统计）
 - [ ] 区内热力图加住宅口径过滤（用 Unitary Plan 分区图层剔除商业/工业地块）
 - [ ] 交叉验证价格（REINZ / QV / homes.co.nz），给每个 suburb 一个置信度
 - [ ] 接入在售房源（Trade Me Property / realestate.co.nz）

@@ -199,6 +199,115 @@
     #dmap { aspect-ratio:4/3; }
   }
 
+
+  /* ---- 选房助手 ---- */
+  #aiToggle {
+    position:fixed; right:20px; bottom:20px; z-index:40;
+    font:inherit; font-size:14px; font-weight:600; padding:11px 18px;
+    border:0; border-radius:24px; cursor:pointer;
+    background:var(--accent); color:#fff; box-shadow:0 6px 22px var(--shadow);
+  }
+  #aiToggle:hover { filter:brightness(1.08); }
+  #aiPanel {
+    position:fixed; right:20px; bottom:20px; z-index:41;
+    width:min(420px, calc(100vw - 40px)); max-height:min(760px, calc(100vh - 40px));
+    display:flex; flex-direction:column;
+    background:var(--surface); border:1px solid var(--ring); border-radius:14px;
+    box-shadow:0 12px 44px var(--shadow); overflow:hidden;
+  }
+  #aiPanel[hidden], #aiToggle[hidden] { display:none; }
+  .aihead {
+    display:flex; align-items:center; gap:9px; padding:12px 14px;
+    border-bottom:1px solid var(--hair); flex:0 0 auto;
+  }
+  .aihead b { font-size:14.5px; }
+  .aihead .tag {
+    font-size:11px; color:var(--accent); border:1px solid currentColor;
+    border-radius:4px; padding:1px 6px;
+  }
+  .aihead .sp { flex:1; }
+  .aihead button {
+    font:inherit; font-size:16px; line-height:1; padding:4px 7px; cursor:pointer;
+    border:0; background:transparent; color:var(--muted); border-radius:5px;
+  }
+  .aihead button:hover { color:var(--ink); background:var(--hair); }
+
+  #aiLog { flex:1 1 auto; overflow-y:auto; padding:14px; display:flex;
+           flex-direction:column; gap:12px; font-size:13px; }
+  .msg-user {
+    align-self:flex-end; max-width:85%; background:var(--accent); color:#fff;
+    padding:8px 12px; border-radius:12px 12px 3px 12px; line-height:1.5;
+  }
+  .msg-ai { line-height:1.6; color:var(--ink-2); }
+  .msg-ai b { color:var(--ink); }
+  .msg-ai .warn { color:#d03b3b; }
+
+  .rec {
+    border:1px solid var(--ring); border-radius:10px; padding:11px 12px;
+    background:var(--plane); margin-top:9px;
+  }
+  .rec .top { display:flex; align-items:baseline; gap:8px; }
+  .rec .nm { font-size:15px; font-weight:650; color:var(--ink); }
+  .rec .zn { font-size:11.5px; color:var(--muted); }
+  .rec .rank {
+    margin-left:auto; font-size:11px; color:var(--muted);
+    font-variant-numeric:tabular-nums;
+  }
+  .rec .price { font-size:12.5px; color:var(--ink-2); margin:5px 0 7px;
+                font-variant-numeric:tabular-nums; }
+  .rec .price b { color:var(--ink); font-size:14px; }
+  .fitbar {
+    height:6px; border-radius:3px; background:var(--hair); overflow:hidden; margin:6px 0 3px;
+  }
+  .fitbar i { display:block; height:100%; background:var(--accent); }
+  .fitcap { font-size:11px; color:var(--muted); margin-bottom:8px; }
+  .rec ul { margin:0 0 6px; padding-left:16px; }
+  .rec li { margin:2px 0; line-height:1.5; }
+  .rec li.pro::marker { content:"＋ "; color:#0ca30c; }
+  .rec li.con::marker { content:"－ "; color:#d03b3b; }
+  .rec .go {
+    font:inherit; font-size:12px; padding:5px 11px; margin-top:4px; cursor:pointer;
+    border:1px solid var(--ring); border-radius:6px;
+    background:var(--surface); color:var(--accent); font-weight:600;
+  }
+  .rec .go:hover { background:var(--accent); color:#fff; border-color:transparent; }
+
+  #aiChips { display:flex; gap:6px; flex-wrap:wrap; padding:0 14px 10px; }
+  #aiChips button {
+    font:inherit; font-size:11.5px; padding:5px 10px; cursor:pointer;
+    border:1px solid var(--ring); border-radius:14px;
+    background:var(--surface); color:var(--ink-2);
+  }
+  #aiChips button:hover { color:var(--ink); border-color:var(--accent); }
+
+  #aiForm { display:flex; gap:8px; padding:10px 14px; border-top:1px solid var(--hair);
+            flex:0 0 auto; align-items:flex-end; }
+  #aiInput {
+    flex:1; font:inherit; font-size:13px; padding:8px 10px; resize:none;
+    border:1px solid var(--ring); border-radius:8px; min-height:38px; max-height:110px;
+    background:var(--plane); color:var(--ink); line-height:1.45;
+  }
+  #aiInput:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  #aiForm button {
+    font:inherit; font-size:13px; font-weight:600; padding:9px 14px; cursor:pointer;
+    border:0; border-radius:8px; background:var(--accent); color:#fff;
+  }
+  #aiForm button:disabled { opacity:.5; cursor:default; }
+  .aifoot {
+    padding:0 14px 11px; font-size:11px; color:var(--muted);
+    display:flex; align-items:center; gap:8px;
+  }
+  .aifoot button {
+    font:inherit; font-size:11px; padding:3px 8px; cursor:pointer;
+    border:1px solid var(--ring); border-radius:5px;
+    background:var(--surface); color:var(--ink-2);
+  }
+  .aifoot .on { color:#0ca30c; }
+  @media (max-width:520px) {
+    #aiPanel { right:10px; left:10px; bottom:10px; width:auto; }
+    #aiToggle { right:12px; bottom:12px; }
+  }
+
   .notes { margin-top:22px; font-size:12.5px; color:var(--ink-2); line-height:1.7; }
   .notes h2 { font-size:13px; margin:0 0 6px; color:var(--ink); font-weight:650; }
   .notes ul { margin:0; padding-left:18px; }
@@ -304,6 +413,27 @@
       <li><b>郊区简介：</b>英文维基百科（CC BY-SA 4.0），按坐标距离核对后匹配，205 个郊区中 204 个有条目。</li>
       <li><b>覆盖范围：</b>共 <span id="nTotal"></span> 个郊区/地区，其中 <span id="nPriced"></span> 个有价格数据。斜纹区块无价格数据，多为农村、林地、机场、医院等，但也包含少数住宅区（如 Western Springs、Westgate、Hillpark、Wairau Valley）——价格源未收录。大堡岛（Aotea / Great Barrier）等外海岛屿不在 LINZ 郊区图层内，故未绘制。</li>
     </ul>
+  </div>
+</div>
+
+<button id="aiToggle">🏠 选房助手</button>
+<div id="aiPanel" hidden>
+  <div class="aihead">
+    <b>选房助手</b><span class="tag">预算优先</span><span class="sp"></span>
+    <button id="aiClose" title="收起">×</button>
+  </div>
+  <div id="aiLog"></div>
+  <div id="aiChips">
+    <button>预算 110 万，三房，北岸</button>
+    <button>预算 90 万投资，看重租金回报</button>
+    <button>预算 150 万，要大院子，离市中心 20 公里内</button>
+  </div>
+  <form id="aiForm">
+    <textarea id="aiInput" rows="1" placeholder="例：预算 120 万，三房，上班在市中心"></textarea>
+    <button id="aiSend" type="submit">推荐</button>
+  </form>
+  <div class="aifoot">
+    <button id="aiKeyBtn"></button><span id="aiKeyState"></span>
   </div>
 </div>
 
@@ -877,6 +1007,424 @@ svg.addEventListener('pointerup', e => {
   const name = (el && el.dataset.n) || hovered;
   if (name) enterDetail(name);
 });
+
+
+/* ==========================================================================
+   选房助手
+   Budget is a hard gate, not a weight. Every claim a recommendation makes is
+   computed from the payload — the optional LLM only reads the request and
+   writes the intro sentence; it never picks suburbs and never states a number.
+   ========================================================================== */
+const AI = {
+  key: () => localStorage.getItem('akl_api_key') || '',
+  busy: false,
+  history: [],
+};
+
+/* ---------- budget: share of a suburb's stock within budget ---------- */
+// The detail payload carries a 24-bin log-spaced histogram of council capital
+// values per suburb, so "what fraction of this suburb costs at most B" is a
+// CDF lookup rather than a guess off the median.
+function affordShare(s, budget) {
+  const dt = s.dt;
+  if (!dt || !dt.hist || !budget) return null;
+  const { hist, histLo: lo, histHi: hi, n } = dt;
+  if (budget <= lo) return hist[0] / n * Math.max(0, budget / lo);
+  const span = Math.log(hi / lo), bins = hist.length;
+  const pos = Math.log(budget / lo) / span * bins;
+  if (pos >= bins) return 1;
+  const whole = Math.floor(pos);
+  let cum = 0;
+  for (let i = 0; i < whole; i++) cum += hist[i];
+  cum += hist[whole] * (pos - whole);
+  return Math.min(1, cum / n);
+}
+
+// Enough choice to be worth recommending, and not so much that the budget is
+// being wasted on an area far below it.
+function budgetScore(a) {
+  if (a === null) return 0.4;
+  if (a < 0.20) return 0;
+  if (a <= 0.70) return 0.55 + 0.45 * (a - 0.20) / 0.50;
+  return 1 - 0.30 * (a - 0.70) / 0.30;
+}
+
+/* ---------- request parsing ---------- */
+const CN_NUM = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8 };
+const ZONE_WORDS = {
+  '北岸': ['北岸', 'north shore', 'northshore'],
+  '西区': ['西区', '西奥克兰', 'west auckland', '西边'],
+  '中区': ['中区', '市中心', '中心区', 'central', 'cbd', '市区', '城里'],
+  '东区': ['东区', '东奥克兰', 'east auckland', '东边'],
+  '南区': ['南区', '南奥克兰', 'south auckland', '南边'],
+  '北部乡村': ['rodney', '北部', '乡村'],
+  '海岛': ['waiheke', '激流岛', '海岛'],
+};
+const WANT_WORDS = {
+  invest: ['投资', '出租', '回报', '收益', 'yield', 'rental', 'investment'],
+  quiet: ['安静', '清静', '不吵', 'quiet', '宜居'],
+  land: ['大地', '院子', '花园', '地大', '独立屋', 'section', 'land', 'house'],
+  apartment: ['公寓', 'apartment', 'unit', '小户型'],
+  commute: ['通勤', '上班', '方便', '交通', 'commute'],
+  coastal: ['海边', '海景', '靠海', 'beach', 'coastal', '沙滩'],
+  growth: ['升值', '增值', '涨', 'growth', 'potential'],
+  liquid: ['好卖', '好脱手', '流动'],
+};
+// Things people ask for that this dataset genuinely cannot answer. Saying so is
+// the point — a confident guess about school zones is worse than no answer.
+const UNSUPPORTED = {
+  '学区 / 学校': ['学区', '学校', 'school', 'decile', 'zone in', '教育'],
+  '治安': ['治安', '安全', 'crime', 'safe'],
+  '族裔构成': ['华人', '亚裔', '族裔', 'chinese community', 'asian'],
+  '洪水 / 地质风险': ['洪水', '水浸', '滑坡', 'flood', 'landslide'],
+};
+
+function parseRequest(text) {
+  const t = text.toLowerCase();
+  const c = { budget: null, beds: null, zones: [], suburbs: [], maxKm: null,
+              wants: [], missing: [] };
+
+  // budget — take the largest figure mentioned, that is the ceiling people mean
+  const cands = [];
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*万/g)) cands.push(+m[1] * 1e4);
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*m(?:il)?\b/g)) cands.push(+m[1] * 1e6);
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*k\b/g)) cands.push(+m[1] * 1e3);
+  for (const m of t.matchAll(/\$?\s*(\d[\d,]{5,})/g)) cands.push(+m[1].replace(/,/g, ''));
+  const money = cands.filter(v => v >= 1e5 && v <= 2e7);
+  if (money.length) c.budget = Math.max(...money);
+
+  // bedrooms
+  const bed = t.match(/([一二两三四五六七八\d])\s*(?:房|室|卧|b(?:ed)?r?(?:oom)?s?\b)/);
+  if (bed) c.beds = CN_NUM[bed[1]] || +bed[1] || null;
+
+  // distance to town
+  const km = t.match(/(\d+)\s*(?:公里|km)/);
+  if (km) c.maxKm = +km[1];
+  else if (/离市中心近|靠近市中心|close to (the )?(cbd|city)/.test(t)) c.maxKm = 12;
+
+  for (const [zone, words] of Object.entries(ZONE_WORDS))
+    if (words.some(w => t.includes(w))) c.zones.push(zone);
+  // "市中心" is usually a reference point, not a destination: "离市中心 25 公里"
+  // and "上班在市中心" are both distance constraints, not "I want to live there".
+  const asReference = /(离|距|到|near|from)\s*(市中心|cbd|city)/.test(t)
+                   || /(上班|工作|通勤|work)/.test(t);
+  const asHome = /住在?\s*(市中心|中区|cbd)|walk to (the )?(cbd|city)|走路.*市中心/.test(t);
+  if (c.zones.includes('中区') && asReference && !asHome) {
+    c.zones = c.zones.filter(z => z !== '中区');
+    c.maxKm = c.maxKm || 15;
+    c.wants.push('commute');
+  }
+  for (const s of all) if (s.p && t.includes(s.n.toLowerCase())) c.suburbs.push(s.n);
+  for (const [w, words] of Object.entries(WANT_WORDS))
+    if (words.some(x => t.includes(x))) c.wants.push(w);
+  for (const [label, words] of Object.entries(UNSUPPORTED))
+    if (words.some(x => t.includes(x))) c.missing.push(label);
+  c.wants = [...new Set(c.wants)];
+  return c;
+}
+
+/* ---------- scoring ---------- */
+const REF = DATA.ref;
+const density = s => (s.o && s.ar) ? s.o / s.ar : null;   // people per km2
+
+function scoreSuburb(s, c) {
+  if (!s.p || !s.dt) return null;
+  const a = affordShare(s, c.budget);
+  if (c.budget && (a === null || a < 0.20)) return null;
+  if (c.zones.length && !c.zones.includes(s.z)) return null;
+  if (c.suburbs.length && !c.suburbs.includes(s.n)) return null;
+  if (c.maxKm && s.km > c.maxKm) return null;
+  // Asking for a house with a yard rules out a suburb that is essentially all
+  // flats, however well it fits the budget.
+  if (c.wants.includes('land') && (s.hs ?? 0) < 0.20) return null;
+  if (s.dt.n < 150) return null;                 // too few homes to say anything
+
+  let pref = 0, weight = 0;
+  const add = (v, w = 1) => { pref += v * w; weight += w; };
+
+  if (c.beds) {
+    const share = (s.bm || [])[Math.min(4, c.beds - 1)] || 0;
+    add(Math.min(1, share / 35), 1.4);
+  }
+  for (const w of c.wants) {
+    if (w === 'invest' && s.i != null)
+      add(clamp01((s.i - REF.yield.p25) / Math.max(0.1, REF.yield.p75 - REF.yield.p25)), 1.5);
+    if (w === 'growth' && s.g != null)
+      add(clamp01((s.g - REF.growth.p25) / Math.max(0.1, REF.growth.p75 - REF.growth.p25)), 1.2);
+    if (w === 'liquid' && s.s != null)
+      add(clamp01((REF.days.p75 - s.s) / Math.max(1, REF.days.p75 - REF.days.p25)), 1);
+    if (w === 'commute' && s.km != null) add(clamp01((30 - s.km) / 25), 1.3);
+    if (w === 'land') {
+      add(clamp01(((s.hs ?? 0) - 0.2) / 0.6), 1.6);
+      add(clamp01(((s.la || 0) - 250) / 500), 0.8);
+    }
+    if (w === 'apartment') add(clamp01(1 - (s.hs ?? 0.5) / 0.5), 1.4);
+    if (w === 'quiet') {
+      const d = density(s);
+      add(d === null ? 0.5 : clamp01(1 - d / 4000), 1.0);
+    }
+    if (w === 'coastal') add(/bay|beach|point|heads|coast|island/i.test(s.n) ? 1 : 0.15, 0.9);
+  }
+  const prefScore = weight ? pref / weight : 0.5;
+  const bs = c.budget ? budgetScore(a) : 0.6;
+  return { s, a, bs, prefScore, total: 0.6 * bs + 0.4 * prefScore };
+}
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+/* ---------- pros and cons, every one attached to a number ---------- */
+function prosCons(r, c) {
+  const s = r.s, dt = s.dt, pro = [], con = [];
+  const pctS = v => (v * 100).toFixed(0) + '%';
+
+  if (r.a !== null) {
+    if (r.a >= 0.35)
+      pro.push(`预算内可选约 ${pctS(r.a)} 的房子（区内 ${dt.n.toLocaleString('en-NZ')} 个计税单元）`);
+    else
+      con.push(`预算内只有约 ${pctS(r.a)} 的房子，选择面窄`);
+    if (r.a > 0.93 && c.budget)
+      con.push(`预算高出这个区不少，${pctS(r.a)} 的房子都在预算内，可能买得比需要的更便宜`);
+  }
+  const spread = dt.q[3] / dt.q[1];
+  if (spread > 2.2)
+    con.push(`区内价差大（中间 50% 落在 ${fmtK(dt.q[1])}–${fmtK(dt.q[3])}），街区选择很关键`);
+
+  if (s.y != null && s.y <= -4) con.push(`过去一年估值下跌 ${Math.abs(s.y).toFixed(1)}%`);
+  if (s.y != null && s.y >= 1.5) pro.push(`过去一年估值上涨 ${s.y.toFixed(1)}%`);
+  if (s.g != null && s.g >= REF.growth.p75) pro.push(`长期年化增长 ${s.g.toFixed(1)}%，全区前 25%`);
+  if (s.g != null && s.g <= REF.growth.p25) con.push(`长期年化增长 ${s.g.toFixed(1)}%，全区后 25%`);
+
+  if (s.i != null && s.i >= REF.yield.p75)
+    pro.push(`租金回报 ${s.i.toFixed(1)}%，全区前 25%（周租中位 $${s.r}）`);
+  if (s.i != null && s.i <= REF.yield.p25 && c.wants.includes('invest'))
+    con.push(`租金回报 ${s.i.toFixed(1)}%，全区后 25%，不适合收租`);
+
+  if (s.s != null && s.s <= REF.days.p25) pro.push(`中位 ${s.s} 天售出，比全区快`);
+  if (s.s != null && s.s >= REF.days.p75) con.push(`中位 ${s.s} 天才售出，市场偏冷`);
+  if (s.c != null && s.c < 25) con.push(`近 12 个月只成交 ${s.c} 套，流动性低、可比案例少`);
+  else if (s.c != null && s.c >= REF.sold.p75) pro.push(`近 12 个月成交 ${s.c} 套，选择多`);
+
+  if (s.km != null) {
+    if (s.km <= 12) pro.push(`离市中心 ${s.km} km`);
+    else if (s.km >= 28) con.push(`离市中心 ${s.km} km，通勤是主要代价`);
+  }
+  if (s.hs != null) {
+    const hp = (s.hs * 100).toFixed(0);
+    if (s.hs >= 0.65)
+      pro.push(`${hp}% 的房源是 ≥300 m² 的独立地块${s.la ? `（中位 ${s.la} m²）` : ''}`);
+    else if (s.hs <= 0.30) {
+      const line = `只有 ${hp}% 的房源有独立地块，绝大多数是公寓或单元房`;
+      // Which side of the ledger that sits on depends on what was asked for.
+      (c.wants.includes('apartment') ? pro : con).push(line);
+    }
+    else if (s.la && s.la <= 300)
+      con.push(`地块中位仅 ${s.la} m²，多为联排`);
+  }
+  const dn = density(s);
+  if (dn !== null && dn >= 4000) con.push(`人口密度 ${Math.round(dn).toLocaleString('en-NZ')} 人/km²，居住密集`);
+  else if (dn !== null && dn <= 700 && c.wants.includes('quiet'))
+    pro.push(`人口密度仅 ${Math.round(dn)} 人/km²，安静`);
+  const flats = ((s.bm || [])[0] || 0) + ((s.bm || [])[1] || 0);
+  if (c.beds >= 3 && flats >= 55)
+    con.push(`一两房占 ${flats.toFixed(0)}%，${c.beds} 房选择相对少`);
+  if (c.beds && (s.bm || [])[Math.min(4, c.beds - 1)] >= 32)
+    pro.push(`${c.beds} 房占 ${s.bm[Math.min(4, c.beds - 1)].toFixed(0)}%，主力户型`);
+  if (s.rp != null && s.rp >= 45)
+    con.push(`租房人口占 ${s.rp.toFixed(0)}%，自住氛围偏弱`);
+  if (dt.chg != null && dt.chg <= -0.12)
+    con.push(`2021→2024 政府重估下调 ${Math.abs(dt.chg * 100).toFixed(0)}%`);
+
+  return { pro: pro.slice(0, 4), con: con.slice(0, 4) };
+}
+
+// Which single constraint is doing the excluding? Relax each in turn and see.
+function diagnose(c) {
+  const count = cc => all.map(s => scoreSuburb(s, cc)).filter(Boolean).length;
+  const trials = [
+    ['区域限制', { ...c, zones: [], suburbs: [] }],
+    ['通勤距离', { ...c, maxKm: null }],
+    ['独立地块要求', { ...c, wants: c.wants.filter(w => w !== 'land') }],
+    ['房型要求', { ...c, beds: null }],
+  ].filter(([, cc]) => JSON.stringify(cc) !== JSON.stringify(c));
+
+  const helps = trials.map(([label, cc]) => [label, count(cc)]).filter(([, n]) => n > 0);
+  const out = [];
+  if (helps.length)
+    out.push('<br>放宽其中一条就有结果：' +
+      helps.map(([l, n]) => `<b>${l}</b>（${n} 个）`).join('、'));
+
+  // cheapest entry point that satisfies everything except the budget
+  const noBudget = all.map(s => scoreSuburb(s, { ...c, budget: null })).filter(Boolean);
+  if (noBudget.length) {
+    const best = noBudget.map(r => r.s).sort((a, b) => a.dt.q[1] - b.dt.q[1])[0];
+    out.push(`<br>其余条件不变的话，最低门槛在 <b>${best.n}</b>，` +
+             `那里 25% 分位的 CV 是 ${fmt(best.dt.q[1])} —— 预算要到这个量级才有得选。`);
+  }
+  return out.join('') || '<br>把预算或区域放宽一些再试。';
+}
+
+/* ---------- rendering ---------- */
+function say(html, cls = 'msg-ai') {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.innerHTML = html;
+  $('#aiLog').appendChild(d);
+  $('#aiLog').scrollTop = $('#aiLog').scrollHeight;
+  return d;
+}
+
+function renderRec(r, c, rank) {
+  const s = r.s, pc = prosCons(r, c);
+  const el = document.createElement('div');
+  el.className = 'rec';
+  el.innerHTML = `
+    <div class="top"><span class="nm">${s.n}</span>
+      <span class="zn">${s.z || ''} · ${s.km} km</span>
+      <span class="rank">#${rank}</span></div>
+    <div class="price"><b>${fmt(s.p)}</b> 平均估值 · CV 中位 ${fmt(s.dt.med)}</div>
+    ${r.a === null ? '' : `<div class="fitbar"><i style="width:${(r.a * 100).toFixed(0)}%"></i></div>
+      <div class="fitcap">预算内可选 ${(r.a * 100).toFixed(0)}% 的房子</div>`}
+    <ul>${pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
+        ${pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
+    <button class="go">打开 ${s.n} 热力图 →</button>`;
+  el.querySelector('.go').addEventListener('click', () => {
+    enterDetail(s.n);
+    if (innerWidth < 900) closePanel();
+  });
+  return el;
+}
+
+function describeCriteria(c) {
+  const bits = [];
+  if (c.budget) bits.push(`预算 <b>${fmt(c.budget)}</b>`);
+  if (c.beds) bits.push(`${c.beds} 房`);
+  if (c.zones.length) bits.push(c.zones.join(' / '));
+  if (c.suburbs.length) bits.push(c.suburbs.join(' / '));
+  if (c.maxKm) bits.push(`离市中心 ≤ ${c.maxKm} km`);
+  const labels = { invest: '投资收租', quiet: '安静', land: '大地块',
+                   apartment: '公寓', commute: '通勤方便', coastal: '近海',
+                   growth: '看重升值', liquid: '好脱手' };
+  c.wants.forEach(w => labels[w] && bits.push(labels[w]));
+  return bits.length ? bits.join('、') : '（没读出具体条件）';
+}
+
+async function handle(text) {
+  if (AI.busy) return;
+  AI.busy = true;
+  $('#aiSend').disabled = true;
+  say(text.replace(/</g, '&lt;'), 'msg-user');
+
+  let c = parseRequest(text);
+  let intro = null;
+  if (AI.key()) {
+    const out = await askModel(text, c).catch(e => ({ error: e.message }));
+    if (out && !out.error) {
+      c = { ...c, ...out.criteria, wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
+      intro = out.intro;
+    } else if (out && out.error) {
+      say(`<span class="warn">模型调用失败（${out.error}），已改用本地规则。</span>`);
+    }
+  }
+
+  if (!c.budget) {
+    say('先告诉我<b>预算上限</b>吧 —— 预算是第一优先级，没有它我没法判断哪些区是真的够得着的。' +
+        '例如「预算 110 万，三房，北岸」。');
+    AI.busy = false; $('#aiSend').disabled = false; return;
+  }
+  say(`读到的条件：${describeCriteria(c)}`);
+  if (c.missing.length)
+    say(`<span class="warn">${c.missing.join('、')}的数据目前不在这个数据集里</span>，` +
+        `所以下面的推荐<b>没有</b>把它纳入考虑，我也不会替你猜。`);
+
+  const scored = all.map(s => scoreSuburb(s, c)).filter(Boolean)
+                    .sort((x, y) => y.total - x.total);
+  if (!scored.length) {
+    say(`按这些条件<b>没有</b>匹配的郊区。` + diagnose(c));
+    AI.busy = false; $('#aiSend').disabled = false; return;
+  }
+
+  const picks = scored.slice(0, 3);
+  say(intro || `按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`);
+  const box = say('');
+  picks.forEach((r, i) => box.appendChild(renderRec(r, c, i + 1)));
+  say(`已打开 <b>${picks[0].s.n}</b> 的区内热力图 —— 注意同一个区里街区差别可能比区之间还大。`);
+  enterDetail(picks[0].s.n);
+
+  AI.busy = false;
+  $('#aiSend').disabled = false;
+}
+
+/* ---------- optional model layer ---------- */
+// The model reads the request and writes one sentence. It is never shown the
+// full dataset and never asked for a number, so it cannot invent one.
+const SYS = `你是奥克兰买房助手。用户用中文描述购房需求，你只做两件事：
+1) 抽取结构化条件，2) 写一句自然的开场白。
+绝对不要推荐具体郊区、不要给任何价格或统计数字——那些由程序从本地数据算出。
+只输出 JSON：{"criteria":{"budget":数字或null,"beds":数字或null,"zones":[],"maxKm":数字或null,"wants":[]},"intro":"一句话"}
+zones 只能取：北岸、西区、中区、东区、南区、北部乡村、海岛。
+wants 只能取：invest、quiet、land、apartment、commute、coastal、growth、liquid。
+budget 一律换算成纽币整数（「110万」=1100000）。`;
+
+async function askModel(text, local) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': AI.key(),
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-5', max_tokens: 500, system: SYS,
+      messages: [{ role: 'user', content: `${text}\n\n（本地规则读到：${JSON.stringify(local)}）` }],
+    }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const j = await res.json();
+  const raw = (j.content || []).map(b => b.text || '').join('');
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('回复不是 JSON');
+  return JSON.parse(m[0]);
+}
+
+/* ---------- panel wiring ---------- */
+function openPanel() { $('#aiPanel').hidden = false; $('#aiToggle').hidden = true; $('#aiInput').focus(); }
+function closePanel() { $('#aiPanel').hidden = true; $('#aiToggle').hidden = false; }
+$('#aiToggle').addEventListener('click', openPanel);
+$('#aiClose').addEventListener('click', closePanel);
+$('#aiForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('#aiInput').value.trim();
+  if (!v) return;
+  $('#aiInput').value = '';
+  handle(v);
+});
+$('#aiInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#aiForm').requestSubmit(); }
+});
+document.querySelectorAll('#aiChips button').forEach(b =>
+  b.addEventListener('click', () => { $('#aiInput').value = b.textContent; $('#aiForm').requestSubmit(); }));
+
+function refreshKeyUi() {
+  const has = !!AI.key();
+  $('#aiKeyState').textContent = has ? '模型已接入' : '纯本地规则';
+  $('#aiKeyState').className = has ? 'on' : '';
+  $('#aiKeyBtn').textContent = has ? '更换 / 清除 Key' : '接入模型（可选）';
+}
+$('#aiKeyBtn').addEventListener('click', () => {
+  const cur = AI.key();
+  const v = prompt(
+    'Anthropic API Key（可选）\n\n' +
+    '不填也能用：选区、打分、优缺点全部由本地数据算出，模型只负责读懂你的话和写开场白。\n' +
+    'Key 存在这台电脑的 localStorage 里，不会写进 heatmap.html，也不会进 git。\n\n' +
+    '留空并确定 = 清除。', cur);
+  if (v === null) return;
+  if (v.trim()) localStorage.setItem('akl_api_key', v.trim());
+  else localStorage.removeItem('akl_api_key');
+  refreshKeyUi();
+});
+refreshKeyUi();
+say('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，' +
+    '并说清每个区的好处和代价。<br>价格口径：平均估值与议会 CV，都不是成交价。');
 
 /* ---------- boot ---------- */
 $('#asAt').textContent = DATA.asAt;
