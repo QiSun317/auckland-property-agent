@@ -311,6 +311,28 @@
     background:var(--surface); color:var(--ink-2);
   }
   .aifoot .on { color:#0ca30c; }
+  #aiCfg {
+    border-top:1px solid var(--hair); padding:12px 14px 14px; font-size:12.5px;
+    background:var(--plane);
+  }
+  #aiCfg[hidden], #cfgFields[hidden], #cfgBaseRow[hidden] { display:none; }
+  #aiCfg label { display:block; color:var(--muted); font-size:11.5px; margin:8px 0 3px; }
+  #aiCfg label:first-child { margin-top:0; }
+  #aiCfg select, #aiCfg input {
+    width:100%; font:inherit; font-size:12.5px; padding:6px 9px;
+    border:1px solid var(--ring); border-radius:6px;
+    background:var(--surface); color:var(--ink);
+  }
+  #aiCfg select:focus, #aiCfg input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .cfghint { font-size:11px; color:var(--muted); margin-top:4px; }
+  .cfghint a { color:var(--accent); }
+  .cfgnote { font-size:11px; color:var(--muted); line-height:1.55; margin:11px 0 0; }
+  .cfgbtns { display:flex; gap:8px; margin-top:11px; }
+  .cfgbtns button {
+    font:inherit; font-size:12.5px; padding:6px 14px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--ring); background:var(--surface); color:var(--ink-2);
+  }
+  #cfgSave { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
   @media (max-width:520px) {
     #aiPanel { right:10px; left:10px; bottom:10px; width:auto; }
     #aiToggle { right:12px; bottom:12px; }
@@ -434,6 +456,28 @@
   <div class="aifoot">
     <button id="aiKeyBtn"></button><span id="aiKeyState"></span>
   </div>
+  <div id="aiCfg" hidden>
+    <label data-zh="模型服务" data-en="Provider">模型服务</label>
+    <select id="cfgProvider"></select>
+    <div id="cfgFields">
+      <label data-zh="API Key" data-en="API key">API Key</label>
+      <input id="cfgKey" type="password" autocomplete="off" spellcheck="false"
+             data-zh-ph="粘贴你自己的 key" data-en-ph="paste your own key">
+      <div class="cfghint" id="cfgGet"></div>
+      <label data-zh="模型" data-en="Model">模型</label>
+      <input id="cfgModel" type="text" spellcheck="false">
+      <div id="cfgBaseRow">
+        <label data-zh="端点地址" data-en="Base URL">端点地址</label>
+        <input id="cfgBase" type="text" spellcheck="false">
+      </div>
+    </div>
+    <p class="cfgnote" data-zh-html="Key 只存在这台设备的 localStorage，不会写进页面文件、不会上传、不会进 git。这是<b>你自己的</b> key —— 网站不提供共享额度。不填也完全可用。"
+       data-en-html="The key stays in this device's localStorage — never written into the page file, never uploaded, never committed. It is <b>your own</b> key; the site provides no shared quota. Everything works without one."></p>
+    <div class="cfgbtns">
+      <button id="cfgSave" data-zh="保存" data-en="Save">保存</button>
+      <button id="cfgCancel" data-zh="取消" data-en="Cancel">取消</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -499,6 +543,7 @@ function setLang(next) {
   if (!$('#tableWrap').hidden) drawTable();
   if (D) { drawDetailLegend(); sidePanel(D.s); enterDetailChrome(D.s); }
   resetAssistant();
+  refreshKeyUi();
 }
 
 const all = DATA.suburbs;
@@ -1324,7 +1369,15 @@ svg.addEventListener('pointerup', e => {
    writes the intro sentence; it never picks suburbs and never states a number.
    ========================================================================== */
 const AI = {
-  key: () => localStorage.getItem('akl_api_key') || '',
+  cfg() {
+    let c = {};
+    try { c = JSON.parse(localStorage.getItem('akl_model') || '{}'); } catch (e) { /* ignore */ }
+    const provider = PROVIDERS[c.provider] ? c.provider : 'none';
+    const d = PROVIDERS[provider];
+    return { provider, key: c.key || '', model: c.model || d.model || '',
+             base: c.base || d.base || '' };
+  },
+  on: () => AI.cfg().provider !== 'none',
   busy: false,
   history: [],
 };
@@ -1655,7 +1708,7 @@ async function handle(text) {
 
   let c = parseRequest(text);
   let intro = null;
-  if (AI.key()) {
+  if (AI.on()) {
     const out = await askModel(text, c).catch(e => ({ error: e.message }));
     if (out && !out.error) {
       c = { ...c, ...out.criteria, wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
@@ -1697,36 +1750,124 @@ async function handle(text) {
   $('#aiSend').disabled = false;
 }
 
-/* ---------- optional model layer ---------- */
-// The model reads the request and writes one sentence. It is never shown the
-// full dataset and never asked for a number, so it cannot invent one.
-const SYS = `你是奥克兰买房助手。用户用中文描述购房需求，你只做两件事：
+/* ---------- optional model layer ----------
+   The model reads the request and writes one sentence. It is never shown the
+   dataset and never asked for a number, so it cannot invent one. Every provider
+   below was checked to actually answer a browser fetch — Cerebras, for one,
+   sends no CORS headers and cannot be called from a page at all. */
+const SYS_ZH = `你是奥克兰买房助手。用户描述购房需求，你只做两件事：
 1) 抽取结构化条件，2) 写一句自然的开场白。
 绝对不要推荐具体郊区、不要给任何价格或统计数字——那些由程序从本地数据算出。
 只输出 JSON：{"criteria":{"budget":数字或null,"beds":数字或null,"zones":[],"maxKm":数字或null,"wants":[]},"intro":"一句话"}
 zones 只能取：北岸、西区、中区、东区、南区、北部乡村、海岛。
 wants 只能取：invest、quiet、land、apartment、commute、coastal、growth、liquid。
 budget 一律换算成纽币整数（「110万」=1100000）。`;
+const SYS_EN = `You help someone choose an Auckland suburb. Do exactly two things:
+extract structured criteria, and write one natural opening sentence.
+Never name a suburb and never state a price or any statistic — those are computed
+by the page from local data.
+Output JSON only: {"criteria":{"budget":number|null,"beds":number|null,"zones":[],"maxKm":number|null,"wants":[]},"intro":"one sentence"}
+zones must come from: 北岸, 西区, 中区, 东区, 南区, 北部乡村, 海岛.
+wants must come from: invest, quiet, land, apartment, commute, coastal, growth, liquid.
+budget is an integer in NZD. Reply in the user's language.`;
+
+async function postJSON(url, headers, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch (e) { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail.slice(0, 90) : ''}`);
+  }
+  return res.json();
+}
+
+const PROVIDERS = {
+  none: { label: () => L('不用模型（纯本地规则）', 'No model (local rules only)') },
+
+  gemini: {
+    label: () => L('Google Gemini — 有免费额度', 'Google Gemini — has a free tier'),
+    model: 'gemini-2.5-flash-lite',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    async call(cfg, sys, user) {
+      const j = await postJSON(
+        `https://generativelanguage.googleapis.com/v1beta/models/${
+          encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.key)}`,
+        {},
+        { systemInstruction: { parts: [{ text: sys }] },
+          contents: [{ role: 'user', parts: [{ text: user }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 600 } });
+      return (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+    },
+  },
+
+  groq: {
+    label: () => L('Groq — 有免费额度，很快', 'Groq — free tier, very fast'),
+    model: 'llama-3.3-70b-versatile',
+    base: 'https://api.groq.com/openai/v1',
+    keyUrl: 'https://console.groq.com/keys',
+  },
+
+  openrouter: {
+    label: () => L('OpenRouter — 有免费模型', 'OpenRouter — has free models'),
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    base: 'https://openrouter.ai/api/v1',
+    keyUrl: 'https://openrouter.ai/keys',
+  },
+
+  mistral: {
+    label: () => L('Mistral — 有免费额度', 'Mistral — has a free tier'),
+    model: 'mistral-small-latest',
+    base: 'https://api.mistral.ai/v1',
+    keyUrl: 'https://console.mistral.ai/api-keys',
+  },
+
+  anthropic: {
+    label: () => L('Anthropic（付费）', 'Anthropic (paid)'),
+    model: 'claude-sonnet-5',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    async call(cfg, sys, user) {
+      const j = await postJSON('https://api.anthropic.com/v1/messages', {
+        'x-api-key': cfg.key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      }, { model: cfg.model, max_tokens: 600, system: sys,
+           messages: [{ role: 'user', content: user }] });
+      return (j.content || []).map(b => b.text || '').join('');
+    },
+  },
+
+  custom: {
+    label: () => L('自定义 OpenAI 兼容端点（含本地 Ollama）',
+                   'Custom OpenAI-compatible endpoint (incl. local Ollama)'),
+    model: 'qwen2.5:7b',
+    base: 'http://localhost:11434/v1',
+    keyUrl: '',
+  },
+};
+
+// Everything except Gemini and Anthropic speaks the OpenAI chat shape.
+for (const p of Object.values(PROVIDERS)) {
+  if (p.base && !p.call) {
+    p.call = async (cfg, sys, user) => {
+      const j = await postJSON(`${cfg.base.replace(/\/$/, '')}/chat/completions`,
+        cfg.key ? { authorization: `Bearer ${cfg.key}` } : {},
+        { model: cfg.model, temperature: 0.4, max_tokens: 600,
+          messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] });
+      return j.choices?.[0]?.message?.content || '';
+    };
+  }
+}
 
 async function askModel(text, local) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': AI.key(),
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5', max_tokens: 500, system: SYS,
-      messages: [{ role: 'user', content: `${text}\n\n（本地规则读到：${JSON.stringify(local)}）` }],
-    }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const j = await res.json();
-  const raw = (j.content || []).map(b => b.text || '').join('');
+  const cfg = AI.cfg();
+  const raw = await PROVIDERS[cfg.provider].call(cfg, LANG === 'zh' ? SYS_ZH : SYS_EN,
+    `${text}\n\n(${L('本地规则读到', 'local rules read')}: ${JSON.stringify(local)})`);
   const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error('回复不是 JSON');
+  if (!m) throw new Error(L('回复不是 JSON', 'reply was not JSON'));
   return JSON.parse(m[0]);
 }
 
@@ -1749,22 +1890,59 @@ document.querySelectorAll('#aiChips button').forEach(b =>
   b.addEventListener('click', () => { $('#aiInput').value = b.textContent; $('#aiForm').requestSubmit(); }));
 
 function refreshKeyUi() {
-  const has = !!AI.key();
-  $('#aiKeyState').textContent = has ? L('模型已接入', 'model connected') : L('纯本地规则', 'local rules only');
-  $('#aiKeyState').className = has ? 'on' : '';
-  $('#aiKeyBtn').textContent = has ? L('更换 / 清除 Key', 'Change / clear key') : L('接入模型（可选）', 'Connect a model (optional)');
+  const c = AI.cfg(), on = c.provider !== 'none';
+  $('#aiKeyState').textContent = on
+    ? L(`模型：${c.provider}`, `model: ${c.provider}`)
+    : L('纯本地规则', 'local rules only');
+  $('#aiKeyState').className = on ? 'on' : '';
+  $('#aiKeyBtn').textContent = on ? L('模型设置', 'Model settings')
+                                  : L('接入模型（可选）', 'Connect a model (optional)');
 }
-$('#aiKeyBtn').addEventListener('click', () => {
-  const cur = AI.key();
-  const v = prompt(
-    L('Anthropic API Key（可选）\n\n不填也能用：选区、打分、优缺点全部由本地数据算出，模型只负责读懂你的话和写开场白。\nKey 存在这台电脑的 localStorage 里，不会写进 heatmap.html，也不会进 git。\n\n留空并确定 = 清除。',
-      'Anthropic API key (optional)\n\nEverything works without it: the shortlist, the scoring and the pros and cons are all computed locally. The model only reads your request and writes the opening line.\nThe key is stored in this browser\u2019s localStorage — never written into heatmap.html, never committed.\n\nSubmit empty to clear.'), cur);
-  if (v === null) return;
-  if (v.trim()) localStorage.setItem('akl_api_key', v.trim());
-  else localStorage.removeItem('akl_api_key');
+
+function openCfg() {
+  const c = AI.cfg();
+  $('#cfgProvider').innerHTML = Object.entries(PROVIDERS)
+    .map(([k, v]) => `<option value="${k}"${k === c.provider ? ' selected' : ''}>${v.label()}</option>`)
+    .join('');
+  $('#cfgKey').value = c.key;
+  $('#cfgModel').value = c.model;
+  $('#cfgBase').value = c.base;
+  syncCfgFields();
+  $('#aiCfg').hidden = false;
+}
+
+function syncCfgFields() {
+  const k = $('#cfgProvider').value, d = PROVIDERS[k];
+  const isNone = k === 'none';
+  $('#cfgFields').hidden = isNone;
+  $('#cfgBaseRow').hidden = k !== 'custom';
+  if ($('#cfgModel').dataset.for !== k) {
+    $('#cfgModel').value = d.model || '';
+    $('#cfgBase').value = d.base || '';
+    $('#cfgModel').dataset.for = k;
+  }
+  $('#cfgGet').innerHTML = d.keyUrl
+    ? `<a href="${d.keyUrl}" target="_blank" rel="noopener">${L('去拿一个 key ↗', 'get a key ↗')}</a>`
+    : L('本地端点通常不需要 key', 'a local endpoint usually needs no key');
+}
+
+$('#cfgProvider').addEventListener('change', syncCfgFields);
+$('#aiKeyBtn').addEventListener('click', openCfg);
+$('#cfgCancel').addEventListener('click', () => { $('#aiCfg').hidden = true; });
+$('#cfgSave').addEventListener('click', () => {
+  const provider = $('#cfgProvider').value;
+  if (provider === 'none') localStorage.removeItem('akl_model');
+  else localStorage.setItem('akl_model', JSON.stringify({
+    provider, key: $('#cfgKey').value.trim(),
+    model: $('#cfgModel').value.trim(), base: $('#cfgBase').value.trim(),
+  }));
+  $('#aiCfg').hidden = true;
   refreshKeyUi();
+  say(L(provider === 'none' ? '已切回纯本地规则。' : `已接入 ${provider}。模型只负责读懂你的话和写开场白，选区和数字仍由本地数据算。`,
+        provider === 'none' ? 'Back to local rules only.' : `Connected ${provider}. It only reads your request and writes the opening line — the shortlist and every number still come from local data.`));
 });
 refreshKeyUi();
+
 function resetAssistant() {
   $('#aiLog').innerHTML = '';
   say(L('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，并说清每个区的好处和代价。<br>价格口径：平均估值与议会 CV，都不是成交价。',
