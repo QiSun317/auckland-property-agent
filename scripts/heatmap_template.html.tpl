@@ -143,6 +143,8 @@
     border:1px solid var(--ring); background:var(--surface); color:var(--ink-2);
   }
   .dbar button:hover { color:var(--ink); }
+  .smoothseg { margin-left:auto; }
+  .smoothseg button { padding:5px 11px; font-size:12px; }
   .dname { font-size:24px; font-weight:650; letter-spacing:-.01em; }
   .dkind { font-size:12.5px; color:var(--muted); }
 
@@ -370,6 +372,10 @@
       <button id="back" data-zh="← 返回全区地图" data-en="← Back to the region">← 返回全区地图</button>
       <span class="dname" id="dName"></span>
       <span class="dkind" id="dKind"></span>
+      <div class="seg smoothseg" role="group" data-zh-aria="渲染方式" data-en-aria="Rendering">
+        <button id="smOn" data-zh="平滑" data-en="Smooth">平滑</button>
+        <button id="smOff" data-zh="网格" data-en="Grid">网格</button>
+      </div>
     </div>
     <div class="dgrid">
       <div id="dGeo">
@@ -822,6 +828,14 @@ function localScale(dt) {
 }
 
 let D = null;   // active detail view
+let SMOOTH = localStorage.getItem('akl_smooth') !== '0';
+// Three box passes of radius 1 approximate a gaussian of sigma sqrt(w^2-1)/2
+// = 1.41 cells, about 50 m. That is enough to lose the cell edges and no more:
+// the data really is 35 m resolution, and smoothing past it would draw
+// structure that was never measured. Radius 2 (~86 m) turned suburbs into ink
+// blots and erased the street-level pattern the map exists to show.
+const SMOOTH_RADIUS = 1;
+const SMOOTH_PASSES = 3;
 
 function drawDetailMap() {
   if (!D || !D.dt) return;
@@ -849,22 +863,148 @@ function drawDetailMap() {
   ctx.fillStyle = cssVar('--nodata');
   ctx.fill(shape, 'evenodd');
 
+  ctx.restore();
+
   // Clip to the suburb: a 35 m cell whose centre sits just outside the boundary,
-  // and the gap-fill's one-cell halo, would otherwise bleed past the coastline.
+  // and the smoothing halo, would otherwise bleed past the coastline.
   ctx.save();
+  ctx.translate(offX, offY);
+  ctx.scale(scale, scale);
+  ctx.translate(-bx, -by);
   ctx.clip(shape, 'evenodd');
-  const [gx0, gy0] = D.dt.bb, cs = D.dt.cs;
-  const size = cs * 1.02;   // without the overlap the cells show hairline seams
-  for (const c of D.cells) {
-    ctx.fillStyle = D.sc.color(c.v);
-    ctx.fillRect(gx0 + c.gx * cs, gy0 + c.gy * cs, size, size);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (SMOOTH) {
+    const view = [bx - offX / scale, by - offY / scale,
+                  rect.width / scale, rect.height / scale];
+    const iw = Math.max(1, Math.round(rect.width)), ih = Math.max(1, Math.round(rect.height));
+    const field = smoothField(D.dt, D.cells, SMOOTH_RADIUS, SMOOTH_PASSES);
+    const img = fieldImage(field, D.dt, view, iw, ih, D.sc);
+    const off = document.createElement('canvas');
+    off.width = iw; off.height = ih;
+    off.getContext('2d').putImageData(img, 0, 0);
+    ctx.drawImage(off, 0, 0, rect.width, rect.height);
+  } else {
+    ctx.translate(offX, offY);
+    ctx.scale(scale, scale);
+    ctx.translate(-bx, -by);
+    const [gx0, gy0] = D.dt.bb, cs = D.dt.cs;
+    for (const c of D.cells) {
+      ctx.fillStyle = D.sc.color(c.v);
+      ctx.fillRect(gx0 + c.gx * cs, gy0 + c.gy * cs, cs * 1.02, cs * 1.02);
+    }
   }
   ctx.restore();
 
+  ctx.save();
+  ctx.translate(offX, offY);
+  ctx.scale(scale, scale);
+  ctx.translate(-bx, -by);
   ctx.lineWidth = 1.4 / scale;
   ctx.strokeStyle = cssVar('--ink-2');
   ctx.stroke(shape);
   ctx.restore();
+}
+
+
+/* ---------- smooth field rendering ----------
+   The grid is 35 m cells, which drawn as rects reads as mosaic. Smoothing has
+   to happen on the VALUES, never on the pixels: this is a diverging ramp, so
+   blending its blue and its red in RGB lands on the neutral grey that means
+   "at the median" — a reading that exists nowhere in the data.
+
+   Blur and hole-filling are one operation, a normalised convolution: box-blur
+   (value x mask) and (mask) separately, then divide. Cells with no parcel
+   contribute nothing instead of contributing zero, and small gaps close
+   themselves with correctly weighted neighbours. */
+function boxBlur1D(src, dst, n, stride, count, r) {
+  for (let line = 0; line < count; line++) {
+    const base = line * (stride === 1 ? n : 1) * (stride === 1 ? 1 : 1);
+    const off = stride === 1 ? line * n : line;
+    let sum = 0;
+    for (let i = -r; i <= r; i++) sum += src[off + Math.min(n - 1, Math.max(0, i)) * stride];
+    for (let i = 0; i < n; i++) {
+      dst[off + i * stride] = sum / (2 * r + 1);
+      const add = src[off + Math.min(n - 1, i + r + 1) * stride];
+      const sub = src[off + Math.max(0, i - r) * stride];
+      sum += add - sub;
+    }
+  }
+}
+
+function smoothField(dt, cells, radius, passes) {
+  const nx = dt.nx, ny = dt.ny, n = nx * ny;
+  let v = new Float32Array(n), m = new Float32Array(n);
+  for (const c of cells) {
+    const i = c.gy * nx + c.gx;
+    v[i] = c.v;
+    m[i] = 1;
+  }
+  let vt = new Float32Array(n), mt = new Float32Array(n);
+  for (let p = 0; p < passes; p++) {
+    boxBlur1D(v, vt, nx, 1, ny, radius);      // rows
+    boxBlur1D(m, mt, nx, 1, ny, radius);
+    boxBlur1D(vt, v, ny, nx, nx, radius);     // columns
+    boxBlur1D(mt, m, ny, nx, nx, radius);
+  }
+  return { v, m, nx, ny };
+}
+
+function rampRGB() {
+  const out = new Uint8Array(ramp.length * 3);
+  for (let i = 0; i < ramp.length; i++) {
+    const h = ramp[i];
+    out[i * 3] = parseInt(h.slice(1, 3), 16);
+    out[i * 3 + 1] = parseInt(h.slice(3, 5), 16);
+    out[i * 3 + 2] = parseInt(h.slice(5, 7), 16);
+  }
+  return out;
+}
+
+// One RGBA image sampled per output pixel: bilinear on the value field, then
+// coloured. Painting cell-by-cell and letting the browser smooth would be
+// interpolating colour again.
+function fieldImage(field, dt, view, w, h, sc) {
+  const img = new ImageData(w, h);
+  const px = img.data, rgb = rampRGB(), last = ramp.length - 1;
+  const LO = 0.05, HI = 0.22;                     // coverage feather band
+  const { v, m, nx, ny } = field;
+  const [vx, vy, vw, vh] = view;                    // view-unit box of the canvas
+  const cs = dt.cs, bx = dt.bb[0], by = dt.bb[1];
+  for (let y = 0; y < h; y++) {
+    const worldY = vy + (y + 0.5) / h * vh;
+    const gy = (worldY - by) / cs - 0.5;
+    const y0 = Math.floor(gy), fy = gy - y0;
+    for (let x = 0; x < w; x++) {
+      const worldX = vx + (x + 0.5) / w * vw;
+      const gx = (worldX - bx) / cs - 0.5;
+      const x0 = Math.floor(gx), fx = gx - x0;
+      if (x0 < -1 || y0 < -1 || x0 >= nx || y0 >= ny) continue;
+      const cx0 = Math.max(0, Math.min(nx - 1, x0)), cx1 = Math.max(0, Math.min(nx - 1, x0 + 1));
+      const cy0 = Math.max(0, Math.min(ny - 1, y0)), cy1 = Math.max(0, Math.min(ny - 1, y0 + 1));
+      const i00 = cy0 * nx + cx0, i10 = cy0 * nx + cx1;
+      const i01 = cy1 * nx + cx0, i11 = cy1 * nx + cx1;
+      const wm = (m[i00] * (1 - fx) + m[i10] * fx) * (1 - fy)
+               + (m[i01] * (1 - fx) + m[i11] * fx) * fy;
+      if (wm < LO) continue;                        // genuinely no data nearby
+      const wv = (v[i00] * (1 - fx) + v[i10] * fx) * (1 - fy)
+               + (v[i01] * (1 - fx) + v[i11] * fx) * fy;
+      // Interpolate along the ramp rather than snapping to one of its 101
+      // entries: rounding put visible banding across every smooth gradient,
+      // which reads as exactly the blockiness this is meant to remove.
+      const g = sc.pos(wv / wm) * last;
+      const k = Math.min(last - 1, Math.floor(g)), fk = g - k;
+      const a = k * 3, b2 = a + 3;
+      const o = (y * w + x) * 4;
+      px[o] = rgb[a] + (rgb[b2] - rgb[a]) * fk;
+      px[o + 1] = rgb[a + 1] + (rgb[b2 + 1] - rgb[a + 1]) * fk;
+      px[o + 2] = rgb[a + 2] + (rgb[b2 + 2] - rgb[a + 2]) * fk;
+      // Feather where the data thins out, so the edge of coverage is not a
+      // hard cut either.
+      px[o + 3] = wm >= HI ? 255 : Math.round(255 * (wm - LO) / (HI - LO));
+    }
+  }
+  return img;
 }
 
 function cellAt(clientX, clientY) {
@@ -990,8 +1130,10 @@ function drawDetailLegend() {
     return `<span>${lead}${fmtK(v)}<br><em>×${(v / D.sc.med).toFixed(2)}</em></span>`;
   }).join('');
   $('#dLegendCap').textContent =
-    L(`政府估价 CV（${DATA.valuationDate} 估值）— 中点是该区中位 ${fmt(D.sc.med)}，两端为区内 10 / 90 分位`,
-      `Council CV (valued ${DATA.valuationDate}) — centred on this suburb's median ${fmt(D.sc.med)}; the ends are its 10th and 90th percentiles`);
+    L(`政府估价 CV（${DATA.valuationDate} 估值）— 中点是该区中位 ${fmt(D.sc.med)}，两端为区内 10 / 90 分位。`
+      + (SMOOTH ? `画面由 35 米网格平滑而来（约 50 米），实际分辨率仍是 35 米。` : `按 35 米原始网格显示。`),
+      `Council CV (valued ${DATA.valuationDate}) — centred on this suburb's median ${fmt(D.sc.med)}; the ends are its 10th and 90th percentiles. `
+      + (SMOOTH ? `Smoothed (~50 m) from the underlying 35 m grid, which is still the real resolution.` : `Shown at the raw 35 m grid.`));
 }
 
 /* ---------- enter / leave ---------- */
@@ -1022,6 +1164,8 @@ function enterDetail(name, push = true) {
   }
   HIDE.forEach(sel => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; });
   $('#detail').hidden = false;
+  $('#smOn').setAttribute('aria-pressed', String(SMOOTH));
+  $('#smOff').setAttribute('aria-pressed', String(!SMOOTH));
   if (dt) drawDetailLegend();
   sidePanel(s);
   drawDetailMap();
@@ -1616,6 +1760,16 @@ function enterDetailChrome(s) {
 }
 document.querySelectorAll('[data-lang]').forEach(b =>
   b.addEventListener('click', () => setLang(b.dataset.lang)));
+
+function setSmooth(on) {
+  SMOOTH = on;
+  localStorage.setItem('akl_smooth', on ? '1' : '0');
+  $('#smOn').setAttribute('aria-pressed', String(on));
+  $('#smOff').setAttribute('aria-pressed', String(!on));
+  drawDetailMap();
+}
+$('#smOn').addEventListener('click', () => setSmooth(true));
+$('#smOff').addEventListener('click', () => setSmooth(false));
 
 /* ---------- boot ---------- */
 applyLang();
