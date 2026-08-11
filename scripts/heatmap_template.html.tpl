@@ -249,6 +249,7 @@
   .msg-ai { line-height:1.6; color:var(--ink-2); }
   .msg-ai b { color:var(--ink); }
   .msg-ai .warn { color:#d03b3b; }
+  .msg-ai .muted-note { color:var(--muted); font-size:11.5px; }
 
   .rec {
     border:1px solid var(--ring); border-radius:10px; padding:11px 12px;
@@ -311,32 +312,7 @@
     background:var(--surface); color:var(--ink-2);
   }
   .aifoot .on { color:#0ca30c; }
-  #aiCfg {
-    border-top:1px solid var(--hair); padding:12px 14px 14px; font-size:12.5px;
-    background:var(--plane);
-  }
-  #aiCfg[hidden], #cfgFields[hidden], #cfgBaseRow[hidden] { display:none; }
-  #aiCfg label { display:block; color:var(--muted); font-size:11.5px; margin:8px 0 3px; }
-  #aiCfg label:first-child { margin-top:0; }
-  #aiCfg select, #aiCfg input {
-    width:100%; font:inherit; font-size:12.5px; padding:6px 9px;
-    border:1px solid var(--ring); border-radius:6px;
-    background:var(--surface); color:var(--ink);
-  }
-  #aiCfg select:focus, #aiCfg input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
-  .cfghint { font-size:11px; color:var(--muted); margin-top:4px; }
-  .cfghint a { color:var(--accent); }
-  .cfgnote { font-size:11px; color:var(--muted); line-height:1.55; margin:11px 0 0; }
-  .cfgwhy { font-size:11.5px; color:var(--ink-2); line-height:1.55; margin:0 0 12px;
-            padding:9px 10px; border-radius:6px; background:var(--surface);
-            border:1px solid var(--ring); }
-  .cfgerr { font-size:11.5px; color:#d03b3b; margin-top:9px; }
-  .cfgbtns { display:flex; gap:8px; margin-top:11px; }
-  .cfgbtns button {
-    font:inherit; font-size:12.5px; padding:6px 14px; border-radius:6px; cursor:pointer;
-    border:1px solid var(--ring); background:var(--surface); color:var(--ink-2);
-  }
-  #cfgSave { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+
   @media (max-width:520px) {
     #aiPanel { right:10px; left:10px; bottom:10px; width:auto; }
     #aiToggle { right:12px; bottom:12px; }
@@ -453,36 +429,11 @@
     <button data-zh="预算 90 万投资，看重租金回报" data-en="$900k to invest, want rental yield">预算 90 万投资，看重租金回报</button>
     <button data-zh="预算 150 万，要大院子，离市中心 20 公里内" data-en="$1.5m, big section, within 20 km of the city">预算 150 万，要大院子，离市中心 20 公里内</button>
   </div>
+  <div class="aifoot" id="aiFoot"></div>
   <form id="aiForm">
     <textarea id="aiInput" rows="1" data-zh-ph="例：预算 120 万，三房，上班在市中心" data-en-ph="e.g. $1.2m, 3 bedrooms, I work in the CBD"></textarea>
     <button id="aiSend" type="submit" data-zh="推荐" data-en="Find">推荐</button>
   </form>
-  <div class="aifoot">
-    <button id="aiKeyBtn"></button><span id="aiKeyState"></span>
-  </div>
-  <div id="aiCfg" hidden>
-    <p class="cfgwhy" id="cfgWhy"></p>
-    <label data-zh="模型服务" data-en="Provider">模型服务</label>
-    <select id="cfgProvider"></select>
-    <div id="cfgFields">
-      <label data-zh="API Key" data-en="API key">API Key</label>
-      <input id="cfgKey" type="password" autocomplete="off" spellcheck="false"
-             data-zh-ph="粘贴你自己的 key" data-en-ph="paste your own key">
-      <div class="cfghint" id="cfgGet"></div>
-      <label data-zh="模型" data-en="Model">模型</label>
-      <input id="cfgModel" type="text" spellcheck="false">
-      <div id="cfgBaseRow">
-        <label data-zh="端点地址" data-en="Base URL">端点地址</label>
-        <input id="cfgBase" type="text" spellcheck="false">
-      </div>
-    </div>
-    <p class="cfgnote" data-zh-html="Key 只存在这台设备的 localStorage，不会写进页面文件、不会上传、不会进 git。这是<b>你自己的</b> key —— 网站不提供共享额度。不填也完全可用。"
-       data-en-html="The key stays in this device's localStorage — never written into the page file, never uploaded, never committed. It is <b>your own</b> key; the site provides no shared quota. Everything works without one."></p>
-    <div class="cfgerr" id="cfgErr"></div>
-    <div class="cfgbtns">
-      <button id="cfgSave" data-zh="保存" data-en="Save">保存</button>
-      <button id="cfgCancel" data-zh="取消" data-en="Cancel">取消</button>
-    </div>
   </div>
 </div>
 
@@ -549,7 +500,6 @@ function setLang(next) {
   if (!$('#tableWrap').hidden) drawTable();
   if (D) { drawDetailLegend(); sidePanel(D.s); enterDetailChrome(D.s); }
   resetAssistant();
-  refreshKeyUi();
 }
 
 const all = DATA.suburbs;
@@ -1374,20 +1324,7 @@ svg.addEventListener('pointerup', e => {
    computed from the payload — the optional LLM only reads the request and
    writes the intro sentence; it never picks suburbs and never states a number.
    ========================================================================== */
-const AI = {
-  cfg() {
-    let c = {};
-    try { c = JSON.parse(localStorage.getItem('akl_model') || '{}'); } catch (e) { /* ignore */ }
-    const provider = PROVIDERS[c.provider] ? c.provider
-                   : (DATA.proxy && c.provider === undefined ? 'proxy' : 'none');
-    const d = PROVIDERS[provider];
-    return { provider, key: c.key || '', model: c.model || d.model || '',
-             base: c.base || d.base || '' };
-  },
-  on: () => AI.cfg().provider !== 'none',
-  busy: false,
-  history: [],
-};
+const AI = { busy: false };
 
 /* ---------- budget: share of a suburb's stock within budget ---------- */
 // The detail payload carries a 24-bin log-spaced histogram of council capital
@@ -1774,38 +1711,25 @@ async function handle(text) {
     AI.busy = false; $('#aiSend').disabled = false; return;
   }
   let intro = null;
-  if (AI.on()) {
-    const out = await askModel(text, c).catch(e => ({ error: e.message }));
+  if (MODEL_ON) {
+    // A model outage is ours to absorb, not the reader's to debug: no vendor
+    // error strings, no settings to go and fix. One quiet line, then carry on
+    // with the rules, which are what produce the answer anyway.
+    const out = await askModel(text).catch(() => null);
     if (out && out.on_topic === false) {
       refuse();
       AI.busy = false; $('#aiSend').disabled = false; return;
     }
-    if (out && !out.error) {
-      c = { ...c, ...out.criteria, wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
+    if (out) {
+      c = { ...c, ...out.criteria,
+            wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
       intro = out.intro;
-    } else if (out && out.error) {
-      const auth = /\b(401|403)\b|api key|unregistered|unauthor/i.test(out.error);
-      const offer = auth && DATA.proxy && AI.cfg().provider !== 'proxy'
-        ? ` <a href="#" id="useProxy">${L('改用本站免费额度（无需 key）',
-                                          'switch to this site\u2019s free quota (no key)')}</a>` : '';
-      say(`<span class="warn">${L(`模型调用失败（${out.error}），已改用本地规则。`,
-             `Model call failed (${out.error}); using local rules instead.`)}</span>${offer}`);
-      const link = $('#useProxy');
-      if (link) link.addEventListener('click', e => {
-        e.preventDefault();
-        localStorage.setItem('akl_model', JSON.stringify({ provider: 'proxy' }));
-        refreshKeyUi();
-        say(L('已切换到本站免费额度，再问一次试试。',
-              'Switched to this site\u2019s free quota — ask again.'));
-      });
+    } else {
+      say(`<span class="muted-note">${L('（AI 暂时不可用，已用本地规则推荐）',
+                                        '(AI unavailable right now — using local rules)')}</span>`);
     }
   }
 
-  if (!c.budget) {
-    say(L('先告诉我<b>预算上限</b>吧 —— 预算是第一优先级，没有它我没法判断哪些区是真的够得着的。例如「预算 110 万，三房，北岸」。',
-          'Tell me your <b>budget ceiling</b> first — budget is the first filter, and without it I cannot tell which suburbs you can actually buy in. For example: "$1.1m, 3 bedrooms, North Shore".'));
-    AI.busy = false; $('#aiSend').disabled = false; return;
-  }
   say(L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`));
   if (c.missing.length)
     say(`<span class="warn">${missingLabels(c.missing)}</span>` +
@@ -1819,9 +1743,27 @@ async function handle(text) {
     AI.busy = false; $('#aiSend').disabled = false; return;
   }
 
-  const picks = scored.slice(0, 3);
-  say(intro || L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
-                 `Budget first: ${scored.length} suburbs are within reach. These three fit best:`));
+  // With a budget, budget leads and the top three by score are the answer.
+  // Without one, three suburbs clustered at the same price teaches nothing, so
+  // spread the picks across the price range instead — that shows what the area
+  // costs, which is the thing a reader without a budget is usually working out.
+  let picks, lead;
+  if (c.budget) {
+    picks = scored.slice(0, 3);
+    lead = L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
+             `Budget first: ${scored.length} suburbs are within reach. These three fit best:`);
+  } else {
+    const pool = scored.slice(0, Math.max(3, Math.ceil(scored.length * 0.6)))
+                       .sort((a, b) => a.s.p - b.s.p);
+    picks = [pool[0], pool[Math.floor(pool.length / 2)], pool[pool.length - 1]]
+              .filter((r, i, arr) => r && arr.indexOf(r) === i);
+    lead = L(`没给预算，所以这 3 个是按你其它条件挑的，并<b>拉开了价位</b>，让你看到这一带的区间。` +
+             `给个预算我能筛得准得多。`,
+             `No budget given, so these three match your other criteria and are ` +
+             `<b>spread across the price range</b> to show what the area costs. ` +
+             `Give me a budget and I can be far more precise.`);
+  }
+  say(intro || lead);
   const box = say('');
   picks.forEach((r, i) => box.appendChild(renderRec(r, c, i + 1)));
   say(L(`已打开 <b>${picks[0].s.n}</b> 的区内热力图 —— 注意同一个区里街区差别可能比区之间还大。`,
@@ -1832,153 +1774,31 @@ async function handle(text) {
   $('#aiSend').disabled = false;
 }
 
-/* ---------- optional model layer ----------
-   The model reads the request and writes one sentence. It is never shown the
-   dataset and never asked for a number, so it cannot invent one. Every provider
-   below was checked to actually answer a browser fetch — Cerebras, for one,
-   sends no CORS headers and cannot be called from a page at all. */
-const SYS_ZH = `你是奥克兰买房助手。用户描述购房需求，你只做两件事：
-1) 抽取结构化条件，2) 写一句自然的开场白。
-绝对不要推荐具体郊区、不要给任何价格或统计数字——那些由程序从本地数据算出。
-这个工具只处理「按预算在奥克兰挑 suburb」。若用户问的与买房/选区无关（写代码、翻译、
-闲聊、常识问答等），把 on_topic 设为 false，其余字段留空，不要回答那个问题。
-只输出 JSON：{"on_topic":true或false,"criteria":{"budget":数字或null,"beds":数字或null,"zones":[],"maxKm":数字或null,"wants":[]},"intro":"一句话"}
-zones 只能取：北岸、西区、中区、东区、南区、北部乡村、海岛。
-wants 只能取：invest、quiet、land、apartment、commute、coastal、growth、liquid。
-budget 一律换算成纽币整数（「110万」=1100000）。`;
-const SYS_EN = `You help someone choose an Auckland suburb. Do exactly two things:
-extract structured criteria, and write one natural opening sentence.
-Never name a suburb and never state a price or any statistic — those are computed
-by the page from local data.
-This tool only shortlists Auckland suburbs against a budget. If the request is
-about anything else — code, translation, chit-chat, general knowledge — set
-on_topic to false, leave the rest empty, and do not answer the question.
-Output JSON only: {"on_topic":true|false,"criteria":{"budget":number|null,"beds":number|null,"zones":[],"maxKm":number|null,"wants":[]},"intro":"one sentence"}
-zones must come from: 北岸, 西区, 中区, 东区, 南区, 北部乡村, 海岛.
-wants must come from: invest, quiet, land, apartment, commute, coastal, growth, liquid.
-budget is an integer in NZD. Reply in the user's language.`;
+/* ---------- model layer ----------
+   There is no provider picker and nothing for the reader to sign up for. If the
+   page was built with a proxy URL, requests go there and the key lives on that
+   server; if it was not, the assistant runs on local rules alone. Either way the
+   shortlist, the scoring and the pros and cons are computed here from the data —
+   the model only reads the request and writes the opening line, so losing it
+   costs phrasing, not answers. */
+const MODEL_ON = !!DATA.proxy;
 
-async function postJSON(url, headers, body) {
-  const res = await fetch(url, {
+async function askModel(text) {
+  const res = await fetch(DATA.proxy, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
   });
-  if (!res.ok) {
-    let detail = '';
-    try { detail = (await res.json()).error?.message || ''; } catch (e) { /* ignore */ }
-    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail.slice(0, 90) : ''}`);
-  }
-  return res.json();
-}
-
-const PROVIDERS = {
-  none: { label: () => L('不用模型（纯本地规则）', 'No model (local rules only)') },
-
-  // Present only when the page was built with a deployed proxy. The key lives
-  // in that worker; nothing secret is ever in this file.
-  ...(DATA.proxy ? { proxy: {
-    label: () => L('本站提供 — 无需你填 key（推荐）',
-                   'This site provides it — no key needed (recommended)'),
-    model: '', keyUrl: '',
-    async call(cfg, sys, user) {
-      const j = await postJSON(DATA.proxy, {}, { text: user });
-      if (j.error) throw new Error(j.error);
-      return JSON.stringify(j);
-    },
-  } } : {}),
-
-  gemini: {
-    label: () => L('Google Gemini — 需要你自己的 key', 'Google Gemini — needs your own key'),
-    model: 'gemini-2.5-flash-lite',
-    keyUrl: 'https://aistudio.google.com/apikey',
-    async call(cfg, sys, user) {
-      const j = await postJSON(
-        `https://generativelanguage.googleapis.com/v1beta/models/${
-          encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.key)}`,
-        {},
-        { systemInstruction: { parts: [{ text: sys }] },
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 600 } });
-      return (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    },
-  },
-
-  groq: {
-    label: () => L('Groq — 需要你自己的 key（有免费额度）',
-                   'Groq — needs your own key (has a free tier)'),
-    model: 'llama-3.3-70b-versatile',
-    base: 'https://api.groq.com/openai/v1',
-    keyUrl: 'https://console.groq.com/keys',
-  },
-
-  openrouter: {
-    label: () => L('OpenRouter — 需要你自己的 key（有免费模型）',
-                   'OpenRouter — needs your own key (has free models)'),
-    model: 'meta-llama/llama-3.3-70b-instruct:free',
-    base: 'https://openrouter.ai/api/v1',
-    keyUrl: 'https://openrouter.ai/keys',
-  },
-
-  mistral: {
-    label: () => L('Mistral — 需要你自己的 key（有免费额度）',
-                   'Mistral — needs your own key (has a free tier)'),
-    model: 'mistral-small-latest',
-    base: 'https://api.mistral.ai/v1',
-    keyUrl: 'https://console.mistral.ai/api-keys',
-  },
-
-  anthropic: {
-    label: () => L('Anthropic — 需要你自己的 key（付费）',
-                   'Anthropic — needs your own key (paid)'),
-    model: 'claude-sonnet-5',
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    async call(cfg, sys, user) {
-      const j = await postJSON('https://api.anthropic.com/v1/messages', {
-        'x-api-key': cfg.key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      }, { model: cfg.model, max_tokens: 600, system: sys,
-           messages: [{ role: 'user', content: user }] });
-      return (j.content || []).map(b => b.text || '').join('');
-    },
-  },
-
-  custom: {
-    label: () => L('自定义 OpenAI 兼容端点（含本地 Ollama）',
-                   'Custom OpenAI-compatible endpoint (incl. local Ollama)'),
-    model: 'qwen2.5:7b',
-    base: 'http://localhost:11434/v1',
-    keyUrl: '',
-  },
-};
-
-// Everything except Gemini and Anthropic speaks the OpenAI chat shape.
-for (const p of Object.values(PROVIDERS)) {
-  if (p.base && !p.call) {
-    p.call = async (cfg, sys, user) => {
-      const j = await postJSON(`${cfg.base.replace(/\/$/, '')}/chat/completions`,
-        cfg.key ? { authorization: `Bearer ${cfg.key}` } : {},
-        { model: cfg.model, temperature: 0.4, max_tokens: 600,
-          messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] });
-      return j.choices?.[0]?.message?.content || '';
-    };
-  }
-}
-
-async function askModel(text, local) {
-  const cfg = AI.cfg();
-  // The proxy is handed the raw request and applies the scope rule server-side;
-  // direct providers get the system prompt from here.
-  const user = cfg.provider === 'proxy' ? text
-    : `${text}\n\n(${L('本地规则读到', 'local rules read')}: ${JSON.stringify(local)})`;
-  const raw = await PROVIDERS[cfg.provider].call(cfg, LANG === 'zh' ? SYS_ZH : SYS_EN, user);
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error(L('回复不是 JSON', 'reply was not JSON'));
-  return JSON.parse(m[0]);
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
+  return j;
 }
 
 /* ---------- panel wiring ---------- */
+$('#aiFoot').innerHTML = MODEL_ON
+  ? L('选区、打分与优缺点全部由本页数据算出；AI 只负责读懂你的话。',
+      'The shortlist, scoring and trade-offs are computed from this page\u2019s data; the AI only reads your request.')
+  : L('全部由本页数据按规则算出。', 'Computed from this page\u2019s data by rule.');
 function openPanel() { $('#aiPanel').hidden = false; $('#aiToggle').hidden = true; $('#aiInput').focus(); }
 function closePanel() { $('#aiPanel').hidden = true; $('#aiToggle').hidden = false; }
 $('#aiToggle').addEventListener('click', openPanel);
@@ -1995,81 +1815,6 @@ $('#aiInput').addEventListener('keydown', e => {
 });
 document.querySelectorAll('#aiChips button').forEach(b =>
   b.addEventListener('click', () => { $('#aiInput').value = b.textContent; $('#aiForm').requestSubmit(); }));
-
-function refreshKeyUi() {
-  const c = AI.cfg(), on = c.provider !== 'none';
-  $('#aiKeyState').textContent = on
-    ? L(`模型：${c.provider}`, `model: ${c.provider}`)
-    : L('纯本地规则', 'local rules only');
-  $('#aiKeyState').className = on ? 'on' : '';
-  $('#aiKeyBtn').textContent = on ? L('模型设置', 'Model settings')
-                                  : L('接入模型（可选）', 'Connect a model (optional)');
-}
-
-function openCfg() {
-  const c = AI.cfg();
-  // The distinction that actually trips people: a key configured on the server
-  // is not the same key box as one pasted here.
-  $('#cfgWhy').innerHTML = DATA.proxy
-    ? L('「本站提供」用的是站点服务端持有的额度，<b>你什么都不用填</b>。<br>' +
-        '下面其它选项是<b>浏览器直连</b>，要在这里粘贴<b>你自己的</b> key —— 即使你已经在服务端配过 key，那一个也不会被这条路用到。',
-        '"This site provides it" uses a quota held on the server — <b>you fill in nothing</b>.<br>' +
-        'The other options call the vendor <b>straight from this browser</b> and need <b>your own</b> key pasted here. ' +
-        'A key configured on the server is not used by that path.')
-    : L('以下都是<b>浏览器直连</b>，需要你自己的 key，存在本机 localStorage。不填也能用，助手会走本地规则。',
-        'These all call the vendor <b>from this browser</b> with your own key, stored in this device\u2019s localStorage. Leaving it unset is fine — the assistant falls back to local rules.');
-  $('#cfgProvider').innerHTML = Object.entries(PROVIDERS)
-    .map(([k, v]) => `<option value="${k}"${k === c.provider ? ' selected' : ''}>${v.label()}</option>`)
-    .join('');
-  $('#cfgKey').value = c.key;
-  $('#cfgModel').value = c.model;
-  $('#cfgBase').value = c.base;
-  syncCfgFields();
-  $('#aiCfg').hidden = false;
-}
-
-function syncCfgFields() {
-  const k = $('#cfgProvider').value, d = PROVIDERS[k];
-  const isNone = k === 'none' || k === 'proxy';
-  $('#cfgFields').hidden = isNone;
-  $('#cfgBaseRow').hidden = k !== 'custom';
-  if ($('#cfgModel').dataset.for !== k) {
-    $('#cfgModel').value = d.model || '';
-    $('#cfgBase').value = d.base || '';
-    $('#cfgModel').dataset.for = k;
-  }
-  if (k === 'proxy') {
-    $('#cfgGet').textContent = '';
-  } else $('#cfgGet').innerHTML = d.keyUrl
-    ? `<a href="${d.keyUrl}" target="_blank" rel="noopener">${L('去拿一个 key ↗', 'get a key ↗')}</a>`
-    : L('本地端点通常不需要 key', 'a local endpoint usually needs no key');
-}
-
-$('#cfgProvider').addEventListener('change', syncCfgFields);
-$('#aiKeyBtn').addEventListener('click', openCfg);
-$('#cfgCancel').addEventListener('click', () => { $('#aiCfg').hidden = true; });
-$('#cfgSave').addEventListener('click', () => {
-  const provider = $('#cfgProvider').value;
-  const needsKey = provider !== 'none' && provider !== 'proxy' && provider !== 'custom';
-  if (needsKey && !$('#cfgKey').value.trim()) {
-    // Saving a key-requiring provider with an empty key used to succeed and
-    // then fail on every request with an opaque 403 from the vendor.
-    $('#cfgErr').textContent = L('这个服务需要填 API Key，否则每次请求都会被拒。',
-                                 'This provider needs an API key, or every request is refused.');
-    return;
-  }
-  $('#cfgErr').textContent = '';
-  if (provider === 'none') localStorage.removeItem('akl_model');
-  else localStorage.setItem('akl_model', JSON.stringify({
-    provider, key: $('#cfgKey').value.trim(),
-    model: $('#cfgModel').value.trim(), base: $('#cfgBase').value.trim(),
-  }));
-  $('#aiCfg').hidden = true;
-  refreshKeyUi();
-  say(L(provider === 'none' ? '已切回纯本地规则。' : `已接入 ${provider}。模型只负责读懂你的话和写开场白，选区和数字仍由本地数据算。`,
-        provider === 'none' ? 'Back to local rules only.' : `Connected ${provider}. It only reads your request and writes the opening line — the shortlist and every number still come from local data.`));
-});
-refreshKeyUi();
 
 function resetAssistant() {
   $('#aiLog').innerHTML = '';
