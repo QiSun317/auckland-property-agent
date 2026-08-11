@@ -327,6 +327,7 @@
   .cfghint { font-size:11px; color:var(--muted); margin-top:4px; }
   .cfghint a { color:var(--accent); }
   .cfgnote { font-size:11px; color:var(--muted); line-height:1.55; margin:11px 0 0; }
+  .cfgerr { font-size:11.5px; color:#d03b3b; margin-top:9px; }
   .cfgbtns { display:flex; gap:8px; margin-top:11px; }
   .cfgbtns button {
     font:inherit; font-size:12.5px; padding:6px 14px; border-radius:6px; cursor:pointer;
@@ -473,6 +474,7 @@
     </div>
     <p class="cfgnote" data-zh-html="Key 只存在这台设备的 localStorage，不会写进页面文件、不会上传、不会进 git。这是<b>你自己的</b> key —— 网站不提供共享额度。不填也完全可用。"
        data-en-html="The key stays in this device's localStorage — never written into the page file, never uploaded, never committed. It is <b>your own</b> key; the site provides no shared quota. Everything works without one."></p>
+    <div class="cfgerr" id="cfgErr"></div>
     <div class="cfgbtns">
       <button id="cfgSave" data-zh="保存" data-en="Save">保存</button>
       <button id="cfgCancel" data-zh="取消" data-en="Cancel">取消</button>
@@ -1778,8 +1780,20 @@ async function handle(text) {
       c = { ...c, ...out.criteria, wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
       intro = out.intro;
     } else if (out && out.error) {
+      const auth = /\b(401|403)\b|api key|unregistered|unauthor/i.test(out.error);
+      const offer = auth && DATA.proxy && AI.cfg().provider !== 'proxy'
+        ? ` <a href="#" id="useProxy">${L('改用本站免费额度（无需 key）',
+                                          'switch to this site\u2019s free quota (no key)')}</a>` : '';
       say(`<span class="warn">${L(`模型调用失败（${out.error}），已改用本地规则。`,
-             `Model call failed (${out.error}); using local rules instead.`)}</span>`);
+             `Model call failed (${out.error}); using local rules instead.`)}</span>${offer}`);
+      const link = $('#useProxy');
+      if (link) link.addEventListener('click', e => {
+        e.preventDefault();
+        localStorage.setItem('akl_model', JSON.stringify({ provider: 'proxy' }));
+        refreshKeyUi();
+        say(L('已切换到本站免费额度，再问一次试试。',
+              'Switched to this site\u2019s free quota — ask again.'));
+      });
     }
   }
 
@@ -2017,6 +2031,15 @@ $('#aiKeyBtn').addEventListener('click', openCfg);
 $('#cfgCancel').addEventListener('click', () => { $('#aiCfg').hidden = true; });
 $('#cfgSave').addEventListener('click', () => {
   const provider = $('#cfgProvider').value;
+  const needsKey = provider !== 'none' && provider !== 'proxy' && provider !== 'custom';
+  if (needsKey && !$('#cfgKey').value.trim()) {
+    // Saving a key-requiring provider with an empty key used to succeed and
+    // then fail on every request with an opaque 403 from the vendor.
+    $('#cfgErr').textContent = L('这个服务需要填 API Key，否则每次请求都会被拒。',
+                                 'This provider needs an API key, or every request is refused.');
+    return;
+  }
+  $('#cfgErr').textContent = '';
   if (provider === 'none') localStorage.removeItem('akl_model');
   else localStorage.setItem('akl_model', JSON.stringify({
     provider, key: $('#cfgKey').value.trim(),
