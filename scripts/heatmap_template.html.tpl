@@ -153,7 +153,9 @@
     position:relative; background:var(--surface); border:1px solid var(--ring);
     border-radius:10px; overflow:hidden;
   }
-  #dmap { display:block; width:100%; aspect-ratio:1/1; max-height:62vh; }
+  #dmap { display:block; width:100%; aspect-ratio:1/1; max-height:62vh;
+          touch-action:none; cursor:grab; }
+  #dmap.dragging { cursor:grabbing; }
   #dtip {
     position:absolute; pointer-events:none; opacity:0; transition:opacity .08s;
     background:var(--surface); border:1px solid var(--ring); border-radius:8px;
@@ -837,76 +839,6 @@ let SMOOTH = localStorage.getItem('akl_smooth') !== '0';
 const SMOOTH_RADIUS = 1;
 const SMOOTH_PASSES = 3;
 
-function drawDetailMap() {
-  if (!D || !D.dt) return;
-  const cv = $('#dmap'), rect = cv.getBoundingClientRect();
-  if (!rect.width) return;
-  const dpr = Math.min(2, devicePixelRatio || 1);
-  cv.width = Math.round(rect.width * dpr);
-  cv.height = Math.round(rect.height * dpr);
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-
-  const [bx, by, bw, bh] = D.s.bx;
-  const pad = 8;
-  const scale = Math.min((rect.width - pad * 2) / bw, (rect.height - pad * 2) / bh);
-  const offX = (rect.width - bw * scale) / 2, offY = (rect.height - bh * scale) / 2;
-  Object.assign(D, { scale, offX, offY, bx, by });
-
-  ctx.save();
-  ctx.translate(offX, offY);
-  ctx.scale(scale, scale);
-  ctx.translate(-bx, -by);
-
-  const shape = new Path2D(D.s.d);
-  ctx.fillStyle = cssVar('--nodata');
-  ctx.fill(shape, 'evenodd');
-
-  ctx.restore();
-
-  // Clip to the suburb: a 35 m cell whose centre sits just outside the boundary,
-  // and the smoothing halo, would otherwise bleed past the coastline.
-  ctx.save();
-  ctx.translate(offX, offY);
-  ctx.scale(scale, scale);
-  ctx.translate(-bx, -by);
-  ctx.clip(shape, 'evenodd');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  if (SMOOTH) {
-    const view = [bx - offX / scale, by - offY / scale,
-                  rect.width / scale, rect.height / scale];
-    const iw = Math.max(1, Math.round(rect.width)), ih = Math.max(1, Math.round(rect.height));
-    const field = smoothField(D.dt, D.cells, SMOOTH_RADIUS, SMOOTH_PASSES);
-    const img = fieldImage(field, D.dt, view, iw, ih, D.sc);
-    const off = document.createElement('canvas');
-    off.width = iw; off.height = ih;
-    off.getContext('2d').putImageData(img, 0, 0);
-    ctx.drawImage(off, 0, 0, rect.width, rect.height);
-  } else {
-    ctx.translate(offX, offY);
-    ctx.scale(scale, scale);
-    ctx.translate(-bx, -by);
-    const [gx0, gy0] = D.dt.bb, cs = D.dt.cs;
-    for (const c of D.cells) {
-      ctx.fillStyle = D.sc.color(c.v);
-      ctx.fillRect(gx0 + c.gx * cs, gy0 + c.gy * cs, cs * 1.02, cs * 1.02);
-    }
-  }
-  ctx.restore();
-
-  ctx.save();
-  ctx.translate(offX, offY);
-  ctx.scale(scale, scale);
-  ctx.translate(-bx, -by);
-  ctx.lineWidth = 1.4 / scale;
-  ctx.strokeStyle = cssVar('--ink-2');
-  ctx.stroke(shape);
-  ctx.restore();
-}
-
-
 /* ---------- smooth field rendering ----------
    The grid is 35 m cells, which drawn as rects reads as mosaic. Smoothing has
    to happen on the VALUES, never on the pixels: this is a diverging ramp, so
@@ -919,7 +851,6 @@ function drawDetailMap() {
    themselves with correctly weighted neighbours. */
 function boxBlur1D(src, dst, n, stride, count, r) {
   for (let line = 0; line < count; line++) {
-    const base = line * (stride === 1 ? n : 1) * (stride === 1 ? 1 : 1);
     const off = stride === 1 ? line * n : line;
     let sum = 0;
     for (let i = -r; i <= r; i++) sum += src[off + Math.min(n - 1, Math.max(0, i)) * stride];
@@ -934,13 +865,13 @@ function boxBlur1D(src, dst, n, stride, count, r) {
 
 function smoothField(dt, cells, radius, passes) {
   const nx = dt.nx, ny = dt.ny, n = nx * ny;
-  let v = new Float32Array(n), m = new Float32Array(n);
+  const v = new Float32Array(n), m = new Float32Array(n);
   for (const c of cells) {
     const i = c.gy * nx + c.gx;
     v[i] = c.v;
     m[i] = 1;
   }
-  let vt = new Float32Array(n), mt = new Float32Array(n);
+  const vt = new Float32Array(n), mt = new Float32Array(n);
   for (let p = 0; p < passes; p++) {
     boxBlur1D(v, vt, nx, 1, ny, radius);      // rows
     boxBlur1D(m, mt, nx, 1, ny, radius);
@@ -963,13 +894,14 @@ function rampRGB() {
 
 // One RGBA image sampled per output pixel: bilinear on the value field, then
 // coloured. Painting cell-by-cell and letting the browser smooth would be
-// interpolating colour again.
+// interpolating colour again — and it is this per-pixel resample that keeps
+// the picture smooth at any zoom instead of magnifying a bitmap.
 function fieldImage(field, dt, view, w, h, sc) {
   const img = new ImageData(w, h);
   const px = img.data, rgb = rampRGB(), last = ramp.length - 1;
   const LO = 0.05, HI = 0.22;                     // coverage feather band
   const { v, m, nx, ny } = field;
-  const [vx, vy, vw, vh] = view;                    // view-unit box of the canvas
+  const [vx, vy, vw, vh] = view;                  // view-unit box of the canvas
   const cs = dt.cs, bx = dt.bb[0], by = dt.bb[1];
   for (let y = 0; y < h; y++) {
     const worldY = vy + (y + 0.5) / h * vh;
@@ -986,7 +918,7 @@ function fieldImage(field, dt, view, w, h, sc) {
       const i01 = cy1 * nx + cx0, i11 = cy1 * nx + cx1;
       const wm = (m[i00] * (1 - fx) + m[i10] * fx) * (1 - fy)
                + (m[i01] * (1 - fx) + m[i11] * fx) * fy;
-      if (wm < LO) continue;                        // genuinely no data nearby
+      if (wm < LO) continue;                      // genuinely no data nearby
       const wv = (v[i00] * (1 - fx) + v[i10] * fx) * (1 - fy)
                + (v[i01] * (1 - fx) + v[i11] * fx) * fy;
       // Interpolate along the ramp rather than snapping to one of its 101
@@ -1007,12 +939,187 @@ function fieldImage(field, dt, view, w, h, sc) {
   return img;
 }
 
+function fitView(rect) {
+  const [bx, by, bw, bh] = D.s.bx, pad = 8;
+  const k = Math.min((rect.width - pad * 2) / bw, (rect.height - pad * 2) / bh);
+  return { k, min: k, cx: bx + bw / 2, cy: by + bh / 2 };
+}
+
+function drawDetailMap(quick) {
+  if (!D || !D.dt) return;
+  const cv = $('#dmap'), rect = cv.getBoundingClientRect();
+  if (!rect.width) return;
+  if (!D.view || D.view.w !== Math.round(rect.width)) {
+    D.view = { ...fitView(rect), w: Math.round(rect.width) };
+  }
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = Math.round(rect.width * dpr);
+  cv.height = Math.round(rect.height * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const { k, cx, cy } = D.view;
+  const vx = cx - rect.width / (2 * k);       // view-unit coords of the top-left
+  const vy = cy - rect.height / (2 * k);
+  Object.assign(D, { scale: k, vx, vy });
+
+  const world = () => {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(-vx * k, -vy * k);
+    ctx.scale(k, k);
+  };
+
+  const shape = new Path2D(D.s.d);
+  ctx.save();
+  world();
+  ctx.fillStyle = cssVar('--nodata');
+  ctx.fill(shape, 'evenodd');
+  ctx.restore();
+
+  // Clip to the suburb: a 35 m cell whose centre sits just outside the boundary,
+  // and the smoothing halo, would otherwise bleed past the coastline.
+  ctx.save();
+  world();
+  ctx.clip(shape, 'evenodd');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (SMOOTH) {
+    // Half resolution while the pointer is moving, full when it settles: the
+    // per-pixel resample is what makes this stay smooth at any zoom, and it is
+    // also the only expensive part.
+    const q = quick ? 0.5 : 1;
+    const iw = Math.max(1, Math.round(rect.width * q));
+    const ih = Math.max(1, Math.round(rect.height * q));
+    const view = [vx, vy, rect.width / k, rect.height / k];
+    const img = fieldImage(D.field, D.dt, view, iw, ih, D.sc);
+    const off = document.createElement('canvas');
+    off.width = iw; off.height = ih;
+    off.getContext('2d').putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off, 0, 0, rect.width, rect.height);
+  } else {
+    world();
+    const [gx0, gy0] = D.dt.bb, cs = D.dt.cs;
+    for (const c of D.cells) {
+      ctx.fillStyle = D.sc.color(c.v);
+      ctx.fillRect(gx0 + c.gx * cs, gy0 + c.gy * cs, cs * 1.02, cs * 1.02);
+    }
+  }
+  ctx.restore();
+
+  ctx.save();
+  world();
+  ctx.lineWidth = 1.4 / k;
+  ctx.strokeStyle = cssVar('--ink-2');
+  ctx.stroke(shape);
+  ctx.restore();
+}
+
+/* ---------- detail zoom & pan ---------- */
+let dRedraw = 0;
+function redrawDetail(quick) {
+  if (dRedraw) return;
+  dRedraw = requestAnimationFrame(() => { dRedraw = 0; drawDetailMap(quick); });
+}
+let settle = 0;
+function settleDetail() {
+  clearTimeout(settle);
+  settle = setTimeout(() => drawDetailMap(false), 140);   // full-res pass
+}
+
+function zoomDetailAt(clientX, clientY, factor) {
+  if (!D || !D.view) return;
+  const cv = $('#dmap'), r = cv.getBoundingClientRect();
+  const k0 = D.view.k;
+  // Cap zoom where one 35 m cell fills ~40 screen px. Past that you are
+  // magnifying air: the data has no more detail to give, and a smooth blur
+  // blown up further just looks like precision that was never measured.
+  const maxK = Math.max(D.view.min * 2, 40 / D.dt.cs);
+  const k = Math.max(D.view.min, Math.min(maxK, k0 * factor));
+  if (k === k0) return;
+  // keep whatever is under the pointer pinned there
+  const wx = D.vx + (clientX - r.left) / k0;
+  const wy = D.vy + (clientY - r.top) / k0;
+  D.view.cx = wx + (r.width / 2 - (clientX - r.left)) / k;
+  D.view.cy = wy + (r.height / 2 - (clientY - r.top)) / k;
+  D.view.k = k;
+  clampDetail(r);
+  redrawDetail(true);
+  settleDetail();
+}
+
+// Keep the suburb from being dragged off screen entirely.
+function clampDetail(r) {
+  const [bx, by, bw, bh] = D.s.bx, k = D.view.k;
+  const halfW = r.width / (2 * k), halfH = r.height / (2 * k);
+  D.view.cx = Math.max(bx - halfW * 0.6, Math.min(bx + bw + halfW * 0.6, D.view.cx));
+  D.view.cy = Math.max(by - halfH * 0.6, Math.min(by + bh + halfH * 0.6, D.view.cy));
+}
+
+{
+  const cv = $('#dmap');
+  cv.addEventListener('wheel', e => {
+    if (!D || !D.dt) return;
+    e.preventDefault();
+    zoomDetailAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0016));
+  }, { passive: false });
+
+  const pts = new Map();
+  let pan = null, pinch = null;
+  cv.addEventListener('pointerdown', e => {
+    if (!D || !D.dt) return;
+    cv.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, e);
+    if (pts.size === 1) {
+      pan = { x: e.clientX, y: e.clientY, cx: D.view.cx, cy: D.view.cy };
+      cv.classList.add('dragging');
+    } else if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
+      pan = null;
+    }
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!D || !D.dt || !pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, e);
+    if (pinch && pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (pinch.d > 0) zoomDetailAt((a.clientX + b.clientX) / 2,
+                                    (a.clientY + b.clientY) / 2, d / pinch.d);
+      pinch.d = d;
+    } else if (pan) {
+      const r = cv.getBoundingClientRect();
+      D.view.cx = pan.cx - (e.clientX - pan.x) / D.view.k;
+      D.view.cy = pan.cy - (e.clientY - pan.y) / D.view.k;
+      clampDetail(r);
+      redrawDetail(true);
+      settleDetail();
+    }
+  });
+  const release = e => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0) { pan = null; cv.classList.remove('dragging'); }
+  };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', release);
+  cv.addEventListener('dblclick', () => {
+    if (!D || !D.dt) return;
+    D.view = { ...fitView(cv.getBoundingClientRect()), w: D.view.w };
+    drawDetailMap(false);
+  });
+}
+
 function cellAt(clientX, clientY) {
+  if (!D || !D.dt || D.vx === undefined) return null;
   const r = $('#dmap').getBoundingClientRect();
-  const vx = (clientX - r.left - D.offX) / D.scale + D.bx;
-  const vy = (clientY - r.top - D.offY) / D.scale + D.by;
-  const gx = Math.floor((vx - D.dt.bb[0]) / D.dt.cs);
-  const gy = Math.floor((vy - D.dt.bb[1]) / D.dt.cs);
+  const wx = D.vx + (clientX - r.left) / D.scale;
+  const wy = D.vy + (clientY - r.top) / D.scale;
+  const gx = Math.floor((wx - D.dt.bb[0]) / D.dt.cs);
+  const gy = Math.floor((wy - D.dt.bb[1]) / D.dt.cs);
   return D.lookup.get(gy * 256 + gx) || null;
 }
 
@@ -1148,6 +1255,7 @@ function enterDetail(name, push = true) {
     D.cells = decodeCells(dt.cells);
     D.sc = localScale(dt);
     D.lookup = new Map(D.cells.map(c => [c.gy * 256 + c.gx, c]));
+    D.field = smoothField(dt, D.cells, SMOOTH_RADIUS, SMOOTH_PASSES);
   }
 
   $('#dName').textContent = name;
@@ -1158,7 +1266,8 @@ function enterDetail(name, push = true) {
   if (dt) {
     $('#dKind').textContent += L(` · 每格约 ${Math.round(dt.cs * DATA.metresPerUnit)} 米`,
                                  ` · ~${Math.round(dt.cs * DATA.metresPerUnit)} m per cell`);
-    $('#dHint').textContent = L('悬停查看该网格的 CV 中位数', 'Hover for the median CV in a cell');
+    $('#dHint').textContent = L('滚轮缩放 · 拖拽平移 · 双击复位 · 悬停看该网格 CV 中位数',
+                                'Scroll to zoom · drag to pan · double-click to reset · hover for a cell\u2019s median CV');
     // let the canvas take the suburb's own shape rather than letterboxing it
     $('#dmap').style.aspectRatio = Math.max(0.72, Math.min(2, s.bx[2] / s.bx[3])).toFixed(3);
   }
@@ -1755,7 +1864,8 @@ function enterDetailChrome(s) {
   if (s.dt) {
     $('#dKind').textContent += L(` · 每格约 ${Math.round(s.dt.cs * DATA.metresPerUnit)} 米`,
                                  ` · ~${Math.round(s.dt.cs * DATA.metresPerUnit)} m per cell`);
-    $('#dHint').textContent = L('悬停查看该网格的 CV 中位数', 'Hover for the median CV in a cell');
+    $('#dHint').textContent = L('滚轮缩放 · 拖拽平移 · 双击复位 · 悬停看该网格 CV 中位数',
+                                'Scroll to zoom · drag to pan · double-click to reset · hover for a cell\u2019s median CV');
   }
 }
 document.querySelectorAll('[data-lang]').forEach(b =>
