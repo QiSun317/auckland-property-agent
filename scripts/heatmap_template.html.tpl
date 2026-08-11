@@ -75,6 +75,11 @@
   #map path { stroke:var(--sep); stroke-width:.6; vector-effect:non-scaling-stroke; }
   #map path.hi { stroke:var(--ink); stroke-width:2; }
   #map path.dim { opacity:.28; }
+  #map path.faded { opacity:.25; }
+  #map path.focus {
+    stroke:var(--ink); stroke-width:2.5; paint-order:stroke;
+    filter:drop-shadow(0 0 6px var(--accent));
+  }
   #hatchLine { stroke:var(--nodata-ink); }
   #hatchBg { fill:var(--nodata); }
 
@@ -262,9 +267,11 @@
     margin-left:auto; font-size:11px; color:var(--muted);
     font-variant-numeric:tabular-nums;
   }
-  .rec .price { font-size:12.5px; color:var(--ink-2); margin:5px 0 7px;
+  .rec .price { font-size:12.5px; color:var(--ink-2); margin:5px 0 1px;
                 font-variant-numeric:tabular-nums; }
-  .rec .price b { color:var(--ink); font-size:14px; }
+  .rec .price b { color:var(--ink); font-size:16px; }
+  .rec .price2 { font-size:11px; color:var(--muted); margin:0 0 7px;
+                 font-variant-numeric:tabular-nums; }
   .fitbar {
     height:6px; border-radius:3px; background:var(--hair); overflow:hidden; margin:6px 0 3px;
   }
@@ -649,6 +656,7 @@ function showTip(s, e) {
   const rows = [];
   if (s.p) {
     const rel = s.p / MID;
+    if (s.dt) rows.push([L('入门价（25% 分位）', 'entry price (25th pct)'), fmt(s.dt.q[1])]);
     rows.push([L('相对全区中位', 'vs regional median'), '×' + rel.toFixed(2)]);
     if (s.y != null) rows.push([L('过去一年', 'past year'), `<span class="${s.y >= 0 ? 'up' : 'down'}">${pct(s.y)}</span>`]);
     if (s.g != null) rows.push([L('长期年增长', 'long-term growth'), s.g.toFixed(1) + '%']);
@@ -1374,6 +1382,7 @@ const WANT_WORDS = {
   coastal: ['海边', '海景', '靠海', 'beach', 'coastal', '沙滩'],
   growth: ['升值', '增值', '涨', 'growth', 'potential'],
   liquid: ['好卖', '好脱手', '流动'],
+  cheap: ['便宜', '实惠', '划算', '经济', '入门', '低价', 'cheap', 'cheapest', 'affordable', 'low price', 'entry level', 'bargain'],
 };
 // Things people ask for that this dataset genuinely cannot answer. Saying so is
 // the point — a confident guess about school zones is worse than no answer.
@@ -1651,6 +1660,35 @@ function refuse() {
         '"$900k to invest, want yield", "$1.5m, big section, within 20 km of the city".'));
 }
 
+// Outline a recommendation on the region map while the pointer is on its card.
+// Pan only when it is off screen, and never zoom: a map that jumps under the
+// cursor costs more orientation than it gives.
+function focusOnMap(name) {
+  if (D) return;                                   // detail view is showing instead
+  const el = nodes.get(name);
+  if (!el) return;
+  clearMapFocus();
+  document.querySelectorAll('#map path').forEach(p => p.classList.add('faded'));
+  el.classList.remove('faded');
+  el.classList.add('focus');
+  el.parentNode.appendChild(el);                   // raise above its neighbours
+
+  const b = el.getBBox(), v = svg.viewBox.baseVal;
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  const margin = 0.08;
+  const outside = cx < v.x + v.width * margin || cx > v.x + v.width * (1 - margin)
+               || cy < v.y + v.height * margin || cy > v.y + v.height * (1 - margin);
+  if (outside) {
+    vb = { x: cx - v.width / 2, y: cy - v.height / 2, w: v.width, h: v.height };
+    writeVB(vb.x, vb.y, vb.w, vb.h);
+  }
+}
+
+function clearMapFocus() {
+  document.querySelectorAll('#map path.faded, #map path.focus')
+    .forEach(p => p.classList.remove('faded', 'focus'));
+}
+
 /* ---------- rendering ---------- */
 function say(html, cls = 'msg-ai') {
   const d = document.createElement('div');
@@ -1669,7 +1707,10 @@ function renderRec(r, c, rank) {
     <div class="top"><span class="nm">${s.n}</span>
       <span class="zn">${zoneL(s.z)} · ${s.km} km</span>
       <span class="rank">#${rank}</span></div>
-    <div class="price"><b>${fmt(s.p)}</b> ${L('平均估值 · CV 中位', 'avg value · median CV')} ${fmt(s.dt.med)}</div>
+    <div class="price"><b>${fmt(s.dt.q[1])}</b> ${L('起', 'and up')} ·
+      ${L('中位', 'median')} ${fmt(s.dt.med)}</div>
+    <div class="price2">${L(`区内 25% 的房子在 ${fmt(s.dt.q[1])} 以下 · 平均估值 ${fmt(s.p)}`,
+                            `a quarter of homes here are under ${fmt(s.dt.q[1])} · average value ${fmt(s.p)}`)}</div>
     ${r.a === null ? '' : `<div class="fitbar"><i style="width:${(r.a * 100).toFixed(0)}%"></i></div>
       <div class="fitcap">${L(`预算内可选 ${(r.a * 100).toFixed(0)}% 的房子`, `${(r.a * 100).toFixed(0)}% of homes fit the budget`)}</div>`}
     <ul>${pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
@@ -1679,6 +1720,8 @@ function renderRec(r, c, rank) {
     enterDetail(s.n);
     if (innerWidth < 900) closePanel();
   });
+  el.addEventListener('pointerenter', () => focusOnMap(s.n));
+  el.addEventListener('pointerleave', clearMapFocus);
   return el;
 }
 
@@ -1691,10 +1734,11 @@ function describeCriteria(c) {
   if (c.maxKm) bits.push(L(`离市中心 ≤ ${c.maxKm} km`, `within ${c.maxKm} km of the city`));
   const labels = LANG === 'zh'
     ? { invest: '投资收租', quiet: '安静', land: '大地块', apartment: '公寓',
-        commute: '通勤方便', coastal: '近海', growth: '看重升值', liquid: '好脱手' }
+        commute: '通勤方便', coastal: '近海', growth: '看重升值', liquid: '好脱手',
+        cheap: '越便宜越好' }
     : { invest: 'rental yield', quiet: 'quiet', land: 'a section', apartment: 'apartment',
         commute: 'easy commute', coastal: 'near the coast', growth: 'capital growth',
-        liquid: 'easy to resell' };
+        liquid: 'easy to resell', cheap: 'as cheap as possible' };
   c.wants.forEach(w => labels[w] && bits.push(labels[w]));
   return bits.length ? bits.join(L('、', ', ')) : L('（没读出具体条件）', '(nothing specific read)');
 }
@@ -1747,8 +1791,32 @@ async function handle(text) {
   // Without one, three suburbs clustered at the same price teaches nothing, so
   // spread the picks across the price range instead — that shows what the area
   // costs, which is the thing a reader without a budget is usually working out.
-  let picks, lead;
-  if (c.budget) {
+  let picks, lead, caveat = null;
+  if (c.wants.includes('cheap') && !c.budget) {
+    // "Anything cheap?" is a price instruction, just an open-ended one. Spreading
+    // across the range here answers a question that was not asked.
+    picks = [...scored].sort((a, b) => a.s.dt.q[1] - b.s.dt.q[1]).slice(0, 3);
+    lead = L(`按<b>最便宜</b>排的（比的是各区 25% 分位的 CV，也就是入门价）。` +
+             `符合条件的有 ${scored.length} 个区：`,
+             `Sorted <b>cheapest first</b>, by each suburb's 25th-percentile CV — ` +
+             `its entry price. ${scored.length} suburbs match:`);
+    // Asking for cheap inside an expensive area has an answer, and it is not the
+    // three least-expensive things there — it is that the area is expensive.
+    const entry = picks[0].s.dt.q[1];
+    const regionEntry = all.filter(x => x.dt).map(x => x.dt.q[1]).sort((a, b) => a - b);
+    const rank = regionEntry.filter(v => v < entry).length / regionEntry.length;
+    if ((c.zones.length || c.maxKm) && rank > 0.55) {
+      const wider = all.filter(x => x.p && x.dt && !c.zones.includes(x.z))
+                       .sort((a, b) => a.dt.q[1] - b.dt.q[1])[0];
+      caveat = L(`不过说实话：这一带本身就不便宜，最低的入门价也要 <b>${fmt(entry)}</b>，` +
+                 `比全区 ${(rank * 100).toFixed(0)}% 的郊区都高。真要压预算，` +
+                 `${zoneL(wider.z)}的 <b>${wider.n}</b> 入门价只要 ${fmt(wider.dt.q[1])}。`,
+                 `Being straight with you: this area is not cheap. Even the lowest entry ` +
+                 `price here is <b>${fmt(entry)}</b>, above ${(rank * 100).toFixed(0)}% of ` +
+                 `Auckland suburbs. If price is the real constraint, <b>${wider.n}</b> in ` +
+                 `${zoneL(wider.z)} starts at ${fmt(wider.dt.q[1])}.`);
+    }
+  } else if (c.budget) {
     picks = scored.slice(0, 3);
     lead = L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
              `Budget first: ${scored.length} suburbs are within reach. These three fit best:`);
@@ -1764,11 +1832,11 @@ async function handle(text) {
              `Give me a budget and I can be far more precise.`);
   }
   say(intro || lead);
+  if (caveat) say(caveat);
   const box = say('');
   picks.forEach((r, i) => box.appendChild(renderRec(r, c, i + 1)));
-  say(L(`已打开 <b>${picks[0].s.n}</b> 的区内热力图 —— 注意同一个区里街区差别可能比区之间还大。`,
-        `Opened the heat map inside <b>${picks[0].s.n}</b> — note the spread between streets in one suburb can beat the spread between suburbs.`));
-  enterDetail(picks[0].s.n);
+  say(L('把鼠标放在上面任一个区，会在奥克兰地图上圈出它的位置；点按钮才进入该区的热力图。',
+        'Hover any of them to outline it on the Auckland map; click the button to open that suburb\u2019s heat map.'));
 
   AI.busy = false;
   $('#aiSend').disabled = false;
