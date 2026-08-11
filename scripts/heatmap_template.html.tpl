@@ -277,6 +277,7 @@
   }
   .fitbar i { display:block; height:100%; background:var(--accent); }
   .fitcap { font-size:11px; color:var(--muted); margin-bottom:8px; }
+  .rec .why { margin:2px 0 8px; line-height:1.6; color:var(--ink-2); }
   .rec ul { margin:0 0 6px; padding-left:16px; }
   .rec li { margin:2px 0; line-height:1.5; }
   .rec li.pro::marker { content:"＋ "; color:#0ca30c; }
@@ -1640,7 +1641,9 @@ function topicSignals(text, c) {
   if (c.zones.length || c.suburbs.length) n += 2;
   if (c.maxKm) n++;
   n += c.wants.length;
-  n += c.missing.length;                       // asking about schools is on topic
+  // Asking about schools, crime or flood risk IS a property question — it is one
+  // this dataset cannot answer, which is a different thing from off topic.
+  n += c.missing.length * 2;
   for (const w of TOPIC_WORDS) if (t.includes(w)) { n++; break; }
   return n;
 }
@@ -1699,7 +1702,7 @@ function say(html, cls = 'msg-ai') {
   return d;
 }
 
-function renderRec(r, c, rank) {
+function renderRec(r, c, rank, why) {
   const s = r.s, pc = prosCons(r, c);
   const el = document.createElement('div');
   el.className = 'rec';
@@ -1713,6 +1716,7 @@ function renderRec(r, c, rank) {
                             `a quarter of homes here are under ${fmt(s.dt.q[1])} · average value ${fmt(s.p)}`)}</div>
     ${r.a === null ? '' : `<div class="fitbar"><i style="width:${(r.a * 100).toFixed(0)}%"></i></div>
       <div class="fitcap">${L(`预算内可选 ${(r.a * 100).toFixed(0)}% 的房子`, `${(r.a * 100).toFixed(0)}% of homes fit the budget`)}</div>`}
+    ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
     <ul>${pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
         ${pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
     <button class="go">${L(`打开 ${s.n} 热力图 →`, `Open ${s.n} heat map →`)}</button>`;
@@ -1749,26 +1753,46 @@ async function handle(text) {
   $('#aiSend').disabled = true;
   say(text.replace(/</g, '&lt;'), 'msg-user');
 
-  let c = parseRequest(text);
+  const c = parseRequest(text);
   if (offTopic(text, c)) {
     refuse();
     AI.busy = false; $('#aiSend').disabled = false; return;
   }
-  let intro = null;
+
+  let picks = null, lead = null, modelWhy = new Map(), dropped = 0;
   if (MODEL_ON) {
-    // A model outage is ours to absorb, not the reader's to debug: no vendor
-    // error strings, no settings to go and fix. One quiet line, then carry on
-    // with the rules, which are what produce the answer anyway.
     const out = await askModel(text).catch(() => null);
-    if (out && out.on_topic === false) {
+    // Advisory only. The model tends to read "I have no school data" as "not my
+    // subject"; a stated budget or area says otherwise, and the local signal is
+    // the more reliable judge of whether this is a property question at all.
+    if (out && out.on_topic === false && topicSignals(text, c) < 2) {
       refuse();
       AI.busy = false; $('#aiSend').disabled = false; return;
     }
-    if (out) {
-      c = { ...c, ...out.criteria,
-            wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
-      intro = out.intro;
-    } else {
+    if (out && out.picks && out.picks.length) {
+      if (out.criteria) Object.assign(c, {
+        budget: c.budget ?? out.criteria.budget ?? null,
+        beds: c.beds ?? out.criteria.beds ?? null,
+        maxKm: c.maxKm ?? out.criteria.maxKm ?? null,
+        zones: c.zones.length ? c.zones : (out.criteria.zones || []),
+        wants: [...new Set([...(c.wants || []), ...(out.criteria.wants || [])])],
+      });
+      lead = (out.lead && claimsCheckOut(out.lead)) ? out.lead : null;
+      picks = [];
+      for (const p of out.picks) {
+        const x = byName.get(p.name);
+        if (!x || !x.dt || !x.p) continue;
+        // A budget is the one constraint worth re-checking here: it is exact,
+        // and offering something out of reach is the failure that matters most.
+        if (c.budget && x.dt.q[1] > c.budget * 1.02) { dropped++; continue; }
+        const r = scoreSuburb(x, { ...c, zones: [], suburbs: [], maxKm: null, wants: [] })
+                  || { s: x, a: affordShare(x, c.budget), bs: 0, prefScore: 0, total: 0 };
+        picks.push(r);
+        if (p.why && figuresCheckOut(p.why, factsFor(p.name)) && claimsCheckOut(p.why))
+          modelWhy.set(p.name, p.why);
+      }
+      if (!picks.length) picks = null;
+    } else if (!out) {
       say(`<span class="muted-note">${L('（AI 暂时不可用，已用本地规则推荐）',
                                         '(AI unavailable right now — using local rules)')}</span>`);
     }
@@ -1779,83 +1803,140 @@ async function handle(text) {
     say(`<span class="warn">${missingLabels(c.missing)}</span>` +
         L('，所以下面的推荐<b>没有</b>把它纳入考虑，我也不会替你猜。',
           ' — so the shortlist below does <b>not</b> account for it, and I will not guess.'));
+  if (dropped)
+    say(`<span class="muted-note">${L(`（有 ${dropped} 个模型给的区入门价超出预算，已剔除）`,
+                                      `(${dropped} suggestion(s) priced above the budget were dropped)`)}</span>`);
 
-  const scored = all.map(s => scoreSuburb(s, c)).filter(Boolean)
-                    .sort((x, y) => y.total - x.total);
-  if (!scored.length) {
-    say(L('按这些条件<b>没有</b>匹配的郊区。', '<b>No</b> suburb matches all of that.') + diagnose(c));
+  const usable = c.budget || c.beds || c.zones.length || c.maxKm || c.wants.length;
+  if (!picks && !usable && c.missing.length) {
+    say(L('我能按<b>价格、户型、地块大小、离市中心距离、租金回报、成交活跃度</b>帮你筛。' +
+          '给个预算或大致区域，我就能开始。',
+          'What I can filter on: <b>price, bedroom mix, section size, distance to the city, ' +
+          'rental yield and how actively a suburb trades</b>. Give me a budget or an area and I can start.'));
     AI.busy = false; $('#aiSend').disabled = false; return;
   }
 
-  // With a budget, budget leads and the top three by score are the answer.
-  // Without one, three suburbs clustered at the same price teaches nothing, so
-  // spread the picks across the price range instead — that shows what the area
-  // costs, which is the thing a reader without a budget is usually working out.
-  let picks, lead, caveat = null;
-  if (c.wants.includes('cheap') && !c.budget) {
-    // "Anything cheap?" is a price instruction, just an open-ended one. Spreading
-    // across the range here answers a question that was not asked.
-    picks = [...scored].sort((a, b) => a.s.dt.q[1] - b.s.dt.q[1]).slice(0, 3);
-    lead = L(`按<b>最便宜</b>排的（比的是各区 25% 分位的 CV，也就是入门价）。` +
-             `符合条件的有 ${scored.length} 个区：`,
-             `Sorted <b>cheapest first</b>, by each suburb's 25th-percentile CV — ` +
-             `its entry price. ${scored.length} suburbs match:`);
-    // Asking for cheap inside an expensive area has an answer, and it is not the
-    // three least-expensive things there — it is that the area is expensive.
-    const entry = picks[0].s.dt.q[1];
-    const regionEntry = all.filter(x => x.dt).map(x => x.dt.q[1]).sort((a, b) => a - b);
-    const rank = regionEntry.filter(v => v < entry).length / regionEntry.length;
-    if ((c.zones.length || c.maxKm) && rank > 0.55) {
-      const wider = all.filter(x => x.p && x.dt && !c.zones.includes(x.z))
-                       .sort((a, b) => a.dt.q[1] - b.dt.q[1])[0];
-      caveat = L(`不过说实话：这一带本身就不便宜，最低的入门价也要 <b>${fmt(entry)}</b>，` +
-                 `比全区 ${(rank * 100).toFixed(0)}% 的郊区都高。真要压预算，` +
-                 `${zoneL(wider.z)}的 <b>${wider.n}</b> 入门价只要 ${fmt(wider.dt.q[1])}。`,
-                 `Being straight with you: this area is not cheap. Even the lowest entry ` +
-                 `price here is <b>${fmt(entry)}</b>, above ${(rank * 100).toFixed(0)}% of ` +
-                 `Auckland suburbs. If price is the real constraint, <b>${wider.n}</b> in ` +
-                 `${zoneL(wider.z)} starts at ${fmt(wider.dt.q[1])}.`);
+  // Rules produce the answer whenever the model did not.
+  if (!picks) {
+    const scored = all.map(x => scoreSuburb(x, c)).filter(Boolean)
+                      .sort((x, y) => y.total - x.total);
+    if (!scored.length) {
+      say(L('按这些条件<b>没有</b>匹配的郊区。', '<b>No</b> suburb matches all of that.') + diagnose(c));
+      AI.busy = false; $('#aiSend').disabled = false; return;
     }
-  } else if (c.budget) {
-    picks = scored.slice(0, 3);
-    lead = L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
-             `Budget first: ${scored.length} suburbs are within reach. These three fit best:`);
-  } else {
-    const pool = scored.slice(0, Math.max(3, Math.ceil(scored.length * 0.6)))
-                       .sort((a, b) => a.s.p - b.s.p);
-    picks = [pool[0], pool[Math.floor(pool.length / 2)], pool[pool.length - 1]]
-              .filter((r, i, arr) => r && arr.indexOf(r) === i);
-    lead = L(`没给预算，所以这 3 个是按你其它条件挑的，并<b>拉开了价位</b>，让你看到这一带的区间。` +
-             `给个预算我能筛得准得多。`,
-             `No budget given, so these three match your other criteria and are ` +
-             `<b>spread across the price range</b> to show what the area costs. ` +
-             `Give me a budget and I can be far more precise.`);
+    if (c.wants.includes('cheap') && !c.budget) {
+      picks = [...scored].sort((x, y) => x.s.dt.q[1] - y.s.dt.q[1]).slice(0, 3);
+      lead = lead || L(`按<b>最便宜</b>排的（比的是各区 25% 分位的 CV，也就是入门价）。符合条件的有 ${scored.length} 个区：`,
+                       `Sorted <b>cheapest first</b>, by each suburb's 25th-percentile CV — its entry price. ${scored.length} suburbs match:`);
+    } else if (c.budget) {
+      picks = scored.slice(0, 3);
+      lead = lead || L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
+                       `Budget first: ${scored.length} suburbs are within reach. These three fit best:`);
+    } else {
+      const spread = scored.slice(0, Math.max(3, Math.ceil(scored.length * 0.6)))
+                           .sort((x, y) => x.s.p - y.s.p);
+      picks = [spread[0], spread[Math.floor(spread.length / 2)], spread[spread.length - 1]]
+                .filter((r, i, arr) => r && arr.indexOf(r) === i);
+      lead = lead || L(`没给预算，所以这几个是按你其它条件挑的，并<b>拉开了价位</b>，让你看到这一带的区间。给个预算我能筛得准得多。`,
+                       `No budget given, so these match your other criteria and are <b>spread across the price range</b> to show what the area costs. Give me a budget and I can be far more precise.`);
+    }
   }
-  say(intro || lead);
-  if (caveat) say(caveat);
+
+  say(lead || L('按你的条件，这几个最合适：', 'These fit what you described:'));
   const box = say('');
-  picks.forEach((r, i) => box.appendChild(renderRec(r, c, i + 1)));
+  picks.forEach((r, i) => box.appendChild(renderRec(r, c, i + 1, modelWhy.get(r.s.n))));
   say(L('把鼠标放在上面任一个区，会在奥克兰地图上圈出它的位置；点按钮才进入该区的热力图。',
-        'Hover any of them to outline it on the Auckland map; click the button to open that suburb\u2019s heat map.'));
+        'Hover any of them to outline it on the Auckland map; click the button to open that suburb’s heat map.'));
 
   AI.busy = false;
   $('#aiSend').disabled = false;
 }
 
 /* ---------- model layer ----------
-   There is no provider picker and nothing for the reader to sign up for. If the
-   page was built with a proxy URL, requests go there and the key lives on that
-   server; if it was not, the assistant runs on local rules alone. Either way the
-   shortlist, the scoring and the pros and cons are computed here from the data —
-   the model only reads the request and writes the opening line, so losing it
-   costs phrasing, not answers. */
+   The model is given the reader's question and a shortlist this page has already
+   filtered from its own data, with the real figures attached. It chooses among
+   them and explains why — that is genuine analysis, not phrasing.
+
+   What it still cannot do is invent. It only ever sees names from the shortlist,
+   and every figure it writes is checked against that suburb's own data before
+   the page will show it. A card whose reasoning fails the check falls back to
+   the rule-generated pros and cons, which are exact by construction. */
 const MODEL_ON = !!DATA.proxy;
+
+// Every suburb with data, as a field list plus one array each — about 21 kB,
+// roughly 7k tokens. Sending the lot is the point: a suburb should not be ruled
+// out because a regex here failed to notice "east" or "cheap".
+const TABLE_FIELDS = ['name', 'zone', 'entry_price', 'median_cv', 'avg_value',
+  'cbd_km', 'change_1y_pct', 'long_term_growth_pct', 'gross_yield_pct',
+  'median_rent_wk', 'days_to_sell', 'sold_12m', 'population', 'renter_pct',
+  'own_section_pct', 'median_section_m2', 'bedroom_mix_1_to_5_pct'];
+
+function tableRow(x) {
+  const r1 = v => v == null ? null : Math.round(v);
+  return [x.n, zoneL(x.z), x.dt.q[1], x.dt.med, x.p, x.km,
+          x.y == null ? null : +x.y.toFixed(1),
+          x.g == null ? null : +x.g.toFixed(1),
+          x.i == null ? null : +x.i.toFixed(1),
+          x.r || null, x.s || null, x.c || null, x.o || null, r1(x.rp),
+          x.hs == null ? null : Math.round(x.hs * 100), x.la || null,
+          (x.bm || []).map(v => Math.round(v || 0)).join('/') || null];
+}
+const suburbTable = () => ({
+  fields: TABLE_FIELDS,
+  rows: all.filter(x => x.p && x.dt).map(tableRow),
+});
+
+// A row keyed by field name, for checking what the model wrote about it.
+function factsFor(name) {
+  const x = byName.get(name);
+  if (!x || !x.dt) return null;
+  const row = tableRow(x), out = {};
+  TABLE_FIELDS.forEach((f, i) => { if (row[i] != null) out[f] = row[i]; });
+  return out;
+}
+
+// Every figure the model wrote has to match one it was given — including bare
+// numbers, which is where the first version leaked: "entry_price为790000" carries
+// no $ and no %, so a regex looking only for currency and percentages waved it
+// straight through.
+function figuresCheckOut(text, facts) {
+  if (!facts) return false;
+  const nums = Object.values(facts).filter(v => typeof v === 'number');
+  const near = (v, pool, tol) => pool.some(x => Math.abs(x - v) <= tol(x));
+  const moneyTol = x => Math.max(5000, x * 0.02);
+  const smallTol = () => 0.6;
+
+  // $1.2m / $790,000 / 790000 / 3.6% / 12.4 — all of it.
+  for (const m of text.matchAll(/(\$\s?)?(\d[\d,]*(?:\.\d+)?)\s*([kKmM]\b|%|公里|km)?/g)) {
+    const unit = m[3] || '';
+    let v = parseFloat(m[2].replace(/,/g, ''));
+    if (!isFinite(v)) continue;
+    if (/[kK]/.test(unit)) v *= 1e3;
+    if (/[mM]/.test(unit)) v *= 1e6;
+    if (unit === '%') { if (!near(v, nums, smallTol)) return false; continue; }
+    if (v >= 1900 && v <= 2100 && !m[1]) continue;      // a year, not a claim
+    if (v < 100 && !m[1]) continue;                     // bedroom counts, "3 房"
+    if (!near(v, nums, v >= 1000 ? moneyTol : smallTol)) return false;
+  }
+  return true;
+}
+
+// The dataset has no school, crime, demographic or hazard data, and the page
+// says so. A model that then calls a suburb a "top school zone" from its own
+// training is contradicting that in the same breath — authoritative-sounding and
+// unverifiable, which is worse than a wrong number. Figures are checked
+// numerically; this checks the claims.
+const UNGROUNDED = /学区|学校|名校|私校|公立|校网|中学|小学|decile|school|治安|安全|犯罪|crime|safe|华人|亚裔|族裔|ethnic|chinese communit|洪水|水浸|滑坡|flood|landslide|地震|医院|hospital|富人区|高档|档次|口碑|声誉|prestig|reputab|affluent|desirable/i;
+
+function claimsCheckOut(text) {
+  return !UNGROUNDED.test(text);
+}
 
 async function askModel(text) {
   const res = await fetch(DATA.proxy, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, ...suburbTable() }),
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
