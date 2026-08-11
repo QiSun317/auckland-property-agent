@@ -327,6 +327,9 @@
   .cfghint { font-size:11px; color:var(--muted); margin-top:4px; }
   .cfghint a { color:var(--accent); }
   .cfgnote { font-size:11px; color:var(--muted); line-height:1.55; margin:11px 0 0; }
+  .cfgwhy { font-size:11.5px; color:var(--ink-2); line-height:1.55; margin:0 0 12px;
+            padding:9px 10px; border-radius:6px; background:var(--surface);
+            border:1px solid var(--ring); }
   .cfgerr { font-size:11.5px; color:#d03b3b; margin-top:9px; }
   .cfgbtns { display:flex; gap:8px; margin-top:11px; }
   .cfgbtns button {
@@ -458,6 +461,7 @@
     <button id="aiKeyBtn"></button><span id="aiKeyState"></span>
   </div>
   <div id="aiCfg" hidden>
+    <p class="cfgwhy" id="cfgWhy"></p>
     <label data-zh="模型服务" data-en="Provider">模型服务</label>
     <select id="cfgProvider"></select>
     <div id="cfgFields">
@@ -1874,7 +1878,8 @@ const PROVIDERS = {
   // Present only when the page was built with a deployed proxy. The key lives
   // in that worker; nothing secret is ever in this file.
   ...(DATA.proxy ? { proxy: {
-    label: () => L('本站提供（免费，无需 key）', 'Provided by this site (free, no key)'),
+    label: () => L('本站提供 — 无需你填 key（推荐）',
+                   'This site provides it — no key needed (recommended)'),
     model: '', keyUrl: '',
     async call(cfg, sys, user) {
       const j = await postJSON(DATA.proxy, {}, { text: user });
@@ -1884,7 +1889,7 @@ const PROVIDERS = {
   } } : {}),
 
   gemini: {
-    label: () => L('Google Gemini — 有免费额度', 'Google Gemini — has a free tier'),
+    label: () => L('Google Gemini — 需要你自己的 key', 'Google Gemini — needs your own key'),
     model: 'gemini-2.5-flash-lite',
     keyUrl: 'https://aistudio.google.com/apikey',
     async call(cfg, sys, user) {
@@ -1900,28 +1905,32 @@ const PROVIDERS = {
   },
 
   groq: {
-    label: () => L('Groq — 有免费额度，很快', 'Groq — free tier, very fast'),
+    label: () => L('Groq — 需要你自己的 key（有免费额度）',
+                   'Groq — needs your own key (has a free tier)'),
     model: 'llama-3.3-70b-versatile',
     base: 'https://api.groq.com/openai/v1',
     keyUrl: 'https://console.groq.com/keys',
   },
 
   openrouter: {
-    label: () => L('OpenRouter — 有免费模型', 'OpenRouter — has free models'),
+    label: () => L('OpenRouter — 需要你自己的 key（有免费模型）',
+                   'OpenRouter — needs your own key (has free models)'),
     model: 'meta-llama/llama-3.3-70b-instruct:free',
     base: 'https://openrouter.ai/api/v1',
     keyUrl: 'https://openrouter.ai/keys',
   },
 
   mistral: {
-    label: () => L('Mistral — 有免费额度', 'Mistral — has a free tier'),
+    label: () => L('Mistral — 需要你自己的 key（有免费额度）',
+                   'Mistral — needs your own key (has a free tier)'),
     model: 'mistral-small-latest',
     base: 'https://api.mistral.ai/v1',
     keyUrl: 'https://console.mistral.ai/api-keys',
   },
 
   anthropic: {
-    label: () => L('Anthropic（付费）', 'Anthropic (paid)'),
+    label: () => L('Anthropic — 需要你自己的 key（付费）',
+                   'Anthropic — needs your own key (paid)'),
     model: 'claude-sonnet-5',
     keyUrl: 'https://console.anthropic.com/settings/keys',
     async call(cfg, sys, user) {
@@ -1999,6 +2008,16 @@ function refreshKeyUi() {
 
 function openCfg() {
   const c = AI.cfg();
+  // The distinction that actually trips people: a key configured on the server
+  // is not the same key box as one pasted here.
+  $('#cfgWhy').innerHTML = DATA.proxy
+    ? L('「本站提供」用的是站点服务端持有的额度，<b>你什么都不用填</b>。<br>' +
+        '下面其它选项是<b>浏览器直连</b>，要在这里粘贴<b>你自己的</b> key —— 即使你已经在服务端配过 key，那一个也不会被这条路用到。',
+        '"This site provides it" uses a quota held on the server — <b>you fill in nothing</b>.<br>' +
+        'The other options call the vendor <b>straight from this browser</b> and need <b>your own</b> key pasted here. ' +
+        'A key configured on the server is not used by that path.')
+    : L('以下都是<b>浏览器直连</b>，需要你自己的 key，存在本机 localStorage。不填也能用，助手会走本地规则。',
+        'These all call the vendor <b>from this browser</b> with your own key, stored in this device\u2019s localStorage. Leaving it unset is fine — the assistant falls back to local rules.');
   $('#cfgProvider').innerHTML = Object.entries(PROVIDERS)
     .map(([k, v]) => `<option value="${k}"${k === c.provider ? ' selected' : ''}>${v.label()}</option>`)
     .join('');
