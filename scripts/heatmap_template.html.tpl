@@ -1372,7 +1372,8 @@ const AI = {
   cfg() {
     let c = {};
     try { c = JSON.parse(localStorage.getItem('akl_model') || '{}'); } catch (e) { /* ignore */ }
-    const provider = PROVIDERS[c.provider] ? c.provider : 'none';
+    const provider = PROVIDERS[c.provider] ? c.provider
+                   : (DATA.proxy && c.provider === undefined ? 'proxy' : 'none');
     const d = PROVIDERS[provider];
     return { provider, key: c.key || '', model: c.model || d.model || '',
              base: c.base || d.base || '' };
@@ -1652,6 +1653,61 @@ function diagnose(c) {
   return out.join('') || L('<br>把预算或区域放宽一些再试。', '<br>Try a larger budget or a wider area.');
 }
 
+
+/* ---------- scope guard ----------
+   This answers one question: which Auckland suburb fits a budget. Anything
+   else gets declined rather than half-answered, both because a property tool
+   guessing at unrelated topics is worse than useless and because an open
+   model endpoint on a public page is a standing invitation to use it as a
+   free general-purpose chatbot.
+
+   Deliberately permissive: "which area suits a family?" carries no budget and
+   no keyword but is plainly on topic. Only a request with no property signal
+   at all AND a clear off-topic shape is refused. */
+const TOPIC_WORDS = [
+  '房', '屋', '住', '买', '購', '租', '预算', '預算', '首付', '贷款', '按揭', '地段',
+  '区', '區', '郊区', '学区', '通勤', '上班', '投资', '回报', '楼', '公寓', '别墅',
+  '院子', '地块', '装修', '房价', '估价', '中介', 'suburb', 'house', 'home', 'flat',
+  'apartment', 'property', 'buy', 'buying', 'rent', 'rental', 'budget', 'mortgage',
+  'deposit', 'yield', 'invest', 'live', 'living', 'move', 'area', 'neighbourhood',
+  'neighborhood', 'commute', 'school', 'section', 'land', 'bedroom', 'auckland',
+];
+const OFFTOPIC_SHAPES = [
+  /写(一[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
+  /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume|summar[iy])\b/i,
+  /\b(who|what|when|where|why)\s+(is|are|was|were)\b(?!.*\b(suburb|area|price|budget)\b)/i,
+  /python|javascript|sql|html|api|regex/i,
+  /天气|新闻|股票|币|翻译成|怎么做菜/,
+];
+
+function topicSignals(text, c) {
+  const t = text.toLowerCase();
+  let n = 0;
+  if (c.budget) n += 2;
+  if (c.beds) n++;
+  if (c.zones.length || c.suburbs.length) n += 2;
+  if (c.maxKm) n++;
+  n += c.wants.length;
+  n += c.missing.length;                       // asking about schools is on topic
+  for (const w of TOPIC_WORDS) if (t.includes(w)) { n++; break; }
+  return n;
+}
+
+function offTopic(text, c) {
+  if (topicSignals(text, c) >= 2) return false;
+  if (OFFTOPIC_SHAPES.some(re => re.test(text))) return true;
+  return topicSignals(text, c) === 0 && text.trim().length > 4;
+}
+
+function refuse() {
+  say(L('我只做一件事：<b>按预算帮你在奥克兰挑 suburb</b>，别的问题我不回答。<br>' +
+        '可以这样问我：「预算 110 万，三房，北岸」「90 万投资，看重租金回报」' +
+        '「150 万要大院子，离市中心 20 公里内」。',
+        'I do one thing: <b>shortlist Auckland suburbs against a budget</b>. ' +
+        'Anything else I will not answer.<br>Try: "$1.1m, 3 bedrooms, North Shore", ' +
+        '"$900k to invest, want yield", "$1.5m, big section, within 20 km of the city".'));
+}
+
 /* ---------- rendering ---------- */
 function say(html, cls = 'msg-ai') {
   const d = document.createElement('div');
@@ -1707,9 +1763,17 @@ async function handle(text) {
   say(text.replace(/</g, '&lt;'), 'msg-user');
 
   let c = parseRequest(text);
+  if (offTopic(text, c)) {
+    refuse();
+    AI.busy = false; $('#aiSend').disabled = false; return;
+  }
   let intro = null;
   if (AI.on()) {
     const out = await askModel(text, c).catch(e => ({ error: e.message }));
+    if (out && out.on_topic === false) {
+      refuse();
+      AI.busy = false; $('#aiSend').disabled = false; return;
+    }
     if (out && !out.error) {
       c = { ...c, ...out.criteria, wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
       intro = out.intro;
@@ -1758,7 +1822,9 @@ async function handle(text) {
 const SYS_ZH = `你是奥克兰买房助手。用户描述购房需求，你只做两件事：
 1) 抽取结构化条件，2) 写一句自然的开场白。
 绝对不要推荐具体郊区、不要给任何价格或统计数字——那些由程序从本地数据算出。
-只输出 JSON：{"criteria":{"budget":数字或null,"beds":数字或null,"zones":[],"maxKm":数字或null,"wants":[]},"intro":"一句话"}
+这个工具只处理「按预算在奥克兰挑 suburb」。若用户问的与买房/选区无关（写代码、翻译、
+闲聊、常识问答等），把 on_topic 设为 false，其余字段留空，不要回答那个问题。
+只输出 JSON：{"on_topic":true或false,"criteria":{"budget":数字或null,"beds":数字或null,"zones":[],"maxKm":数字或null,"wants":[]},"intro":"一句话"}
 zones 只能取：北岸、西区、中区、东区、南区、北部乡村、海岛。
 wants 只能取：invest、quiet、land、apartment、commute、coastal、growth、liquid。
 budget 一律换算成纽币整数（「110万」=1100000）。`;
@@ -1766,7 +1832,10 @@ const SYS_EN = `You help someone choose an Auckland suburb. Do exactly two thing
 extract structured criteria, and write one natural opening sentence.
 Never name a suburb and never state a price or any statistic — those are computed
 by the page from local data.
-Output JSON only: {"criteria":{"budget":number|null,"beds":number|null,"zones":[],"maxKm":number|null,"wants":[]},"intro":"one sentence"}
+This tool only shortlists Auckland suburbs against a budget. If the request is
+about anything else — code, translation, chit-chat, general knowledge — set
+on_topic to false, leave the rest empty, and do not answer the question.
+Output JSON only: {"on_topic":true|false,"criteria":{"budget":number|null,"beds":number|null,"zones":[],"maxKm":number|null,"wants":[]},"intro":"one sentence"}
 zones must come from: 北岸, 西区, 中区, 东区, 南区, 北部乡村, 海岛.
 wants must come from: invest, quiet, land, apartment, commute, coastal, growth, liquid.
 budget is an integer in NZD. Reply in the user's language.`;
@@ -1787,6 +1856,18 @@ async function postJSON(url, headers, body) {
 
 const PROVIDERS = {
   none: { label: () => L('不用模型（纯本地规则）', 'No model (local rules only)') },
+
+  // Present only when the page was built with a deployed proxy. The key lives
+  // in that worker; nothing secret is ever in this file.
+  ...(DATA.proxy ? { proxy: {
+    label: () => L('本站提供（免费，无需 key）', 'Provided by this site (free, no key)'),
+    model: '', keyUrl: '',
+    async call(cfg, sys, user) {
+      const j = await postJSON(DATA.proxy, {}, { text: user });
+      if (j.error) throw new Error(j.error);
+      return JSON.stringify(j);
+    },
+  } } : {}),
 
   gemini: {
     label: () => L('Google Gemini — 有免费额度', 'Google Gemini — has a free tier'),
@@ -1864,8 +1945,11 @@ for (const p of Object.values(PROVIDERS)) {
 
 async function askModel(text, local) {
   const cfg = AI.cfg();
-  const raw = await PROVIDERS[cfg.provider].call(cfg, LANG === 'zh' ? SYS_ZH : SYS_EN,
-    `${text}\n\n(${L('本地规则读到', 'local rules read')}: ${JSON.stringify(local)})`);
+  // The proxy is handed the raw request and applies the scope rule server-side;
+  // direct providers get the system prompt from here.
+  const user = cfg.provider === 'proxy' ? text
+    : `${text}\n\n(${L('本地规则读到', 'local rules read')}: ${JSON.stringify(local)})`;
+  const raw = await PROVIDERS[cfg.provider].call(cfg, LANG === 'zh' ? SYS_ZH : SYS_EN, user);
   const m = raw.match(/\{[\s\S]*\}/);
   if (!m) throw new Error(L('回复不是 JSON', 'reply was not JSON'));
   return JSON.parse(m[0]);
@@ -1913,7 +1997,7 @@ function openCfg() {
 
 function syncCfgFields() {
   const k = $('#cfgProvider').value, d = PROVIDERS[k];
-  const isNone = k === 'none';
+  const isNone = k === 'none' || k === 'proxy';
   $('#cfgFields').hidden = isNone;
   $('#cfgBaseRow').hidden = k !== 'custom';
   if ($('#cfgModel').dataset.for !== k) {
@@ -1921,7 +2005,9 @@ function syncCfgFields() {
     $('#cfgBase').value = d.base || '';
     $('#cfgModel').dataset.for = k;
   }
-  $('#cfgGet').innerHTML = d.keyUrl
+  if (k === 'proxy') {
+    $('#cfgGet').textContent = '';
+  } else $('#cfgGet').innerHTML = d.keyUrl
     ? `<a href="${d.keyUrl}" target="_blank" rel="noopener">${L('去拿一个 key ↗', 'get a key ↗')}</a>`
     : L('本地端点通常不需要 key', 'a local endpoint usually needs no key');
 }

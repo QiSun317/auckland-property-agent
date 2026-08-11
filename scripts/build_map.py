@@ -329,6 +329,9 @@ def main():
         "rampLight": ramp_lut(RAMP_LIGHT),
         "rampDark": ramp_lut(RAMP_DARK),
         "ref": reference_stats(rows),
+        # Set AKL_AGENT_PROXY to a deployed ops/worker URL to offer the model
+        # without visitors needing their own key. Empty = the option is absent.
+        "proxy": os.environ.get("AKL_AGENT_PROXY", ""),
         "valuationDate": detail["valuationDate"],
         "prevValuationDate": detail["prevValuationDate"],
         "unitsMatched": detail["unitsMatched"],
