@@ -1,4 +1,4 @@
-<title>大奥克兰房价热力图</title>
+<title>大奥克兰房价热力图 · Auckland House Price Heat Map</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -30,6 +30,10 @@
   }
   .wrap { max-width:1180px; margin:0 auto; padding:28px 20px 56px; }
 
+  .titlerow { display:flex; align-items:flex-start; gap:14px; }
+  .titlerow h1 { flex:1; }
+  .langseg { flex:0 0 auto; margin-top:2px; }
+  .langseg button { padding:5px 11px; font-size:12.5px; }
   h1 { font-size:26px; line-height:1.25; margin:0 0 6px; font-weight:650; letter-spacing:-.01em; }
   .sub { color:var(--ink-2); margin:0 0 22px; font-size:14px; }
   .sub b { color:var(--ink); font-weight:600; }
@@ -321,33 +325,37 @@
 </style>
 
 <div class="wrap">
-  <h1>大奥克兰房价热力图</h1>
+  <div class="titlerow">
+    <h1 data-zh="大奥克兰房价热力图" data-en="Auckland House Price Heat Map">大奥克兰房价热力图</h1>
+    <div class="seg langseg" role="group" aria-label="Language">
+      <button data-lang="zh" aria-pressed="true">中文</button>
+      <button data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
   <p class="sub">
-    按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），数据截至 <b id="asAt"></b>。
-    颜色像气温图：<b>越红越贵，越蓝越便宜</b>，灰白色 = 接近全区中位水平。
-    <b>点击任一郊区</b>可查看该区简介与区内逐街区的房价热力图。
+    <span id="subCopy"></span>
   </p>
 
   <div class="tiles" id="tiles"></div>
 
   <div class="bar">
-    <div class="seg" role="group" aria-label="配色标准">
-      <button data-mode="ratio" aria-pressed="true">相对中位数</button>
-      <button data-mode="rank" aria-pressed="false">分位排名</button>
+    <div class="seg" role="group" data-zh-aria="配色标准" data-en-aria="Colour scale">
+      <button data-mode="ratio" aria-pressed="true" data-zh="相对中位数" data-en="Vs median">相对中位数</button>
+      <button data-mode="rank" aria-pressed="false" data-zh="分位排名" data-en="Percentile">分位排名</button>
     </div>
-    <div class="seg" role="group" aria-label="视野">
-      <button data-view="urban" aria-pressed="true">城区</button>
-      <button data-view="full" aria-pressed="false">全区</button>
+    <div class="seg" role="group" data-zh-aria="视野" data-en-aria="Extent">
+      <button data-view="urban" aria-pressed="true" data-zh="城区" data-en="Urban">城区</button>
+      <button data-view="full" aria-pressed="false" data-zh="全区" data-en="Whole region">全区</button>
     </div>
-    <input type="search" id="q" placeholder="搜索郊区，例如 Remuera / Albany" list="names" autocomplete="off">
+    <input type="search" id="q" data-zh-ph="搜索郊区，例如 Remuera / Albany" data-en-ph="Search a suburb, e.g. Remuera" list="names" autocomplete="off">
     <datalist id="names"></datalist>
     <span class="spacer"></span>
-    <div class="seg"><button id="toggleTable" aria-pressed="false">数据表</button></div>
+    <div class="seg"><button id="toggleTable" aria-pressed="false" data-zh="数据表" data-en="Table">数据表</button></div>
   </div>
 
   <div class="stage">
-    <svg id="map" role="img" aria-label="大奥克兰各郊区平均房产估值热力图"></svg>
-    <div class="hint">滚轮缩放 · 拖拽平移 · 悬停看数据 · 点击进入该区详情</div>
+    <svg id="map" role="img" data-zh-aria="大奥克兰各郊区平均房产估值热力图" data-en-aria="Heat map of average house value by Auckland suburb"></svg>
+    <div class="hint" data-zh="滚轮缩放 · 拖拽平移 · 悬停看数据 · 点击进入该区详情" data-en="Scroll to zoom · drag to pan · hover for figures · click a suburb">滚轮缩放</div>
     <div id="tip" role="status"></div>
   </div>
 
@@ -359,7 +367,7 @@
 
   <div id="detail" hidden>
     <div class="dbar">
-      <button id="back">← 返回全区地图</button>
+      <button id="back" data-zh="← 返回全区地图" data-en="← Back to the region">← 返回全区地图</button>
       <span class="dname" id="dName"></span>
       <span class="dkind" id="dKind"></span>
     </div>
@@ -383,65 +391,37 @@
   <div id="tableWrap" hidden>
     <table id="tbl">
       <thead><tr>
-        <th data-k="n">郊区</th>
-        <th data-k="p" aria-sort="descending">平均估值</th>
-        <th data-k="y">年变化</th>
-        <th data-k="g">长期年增长</th>
-        <th data-k="r">周租金中位</th>
-        <th data-k="i">估算租金回报</th>
-        <th data-k="s">中位售出天数</th>
-        <th data-k="c">近 12 月成交</th>
+        <th data-k="n" data-zh="郊区" data-en="Suburb">郊区</th>
+        <th data-k="p" aria-sort="descending" data-zh="平均估值" data-en="Avg value">平均估值</th>
+        <th data-k="y" data-zh="年变化" data-en="1yr change">年变化</th>
+        <th data-k="g" data-zh="长期年增长" data-en="Long-term growth">长期年增长</th>
+        <th data-k="r" data-zh="周租金中位" data-en="Median rent/wk">周租金中位</th>
+        <th data-k="i" data-zh="估算租金回报" data-en="Est. yield">估算租金回报</th>
+        <th data-k="s" data-zh="中位售出天数" data-en="Days to sell">中位售出天数</th>
+        <th data-k="c" data-zh="近 12 月成交" data-en="Sold 12m">近 12 月成交</th>
       </tr></thead>
       <tbody></tbody>
     </table>
   </div>
 
-  <div class="notes">
-    <h2>免责声明</h2>
-    <p style="margin:0 0 16px">
-      个人研究项目，<b>不构成投资或购房建议</b>。页面上所有价格都是<b>估值</b>
-      —— 自动估值模型与议会政府估价（CV）—— <b>不是成交价</b>，个体房产可能与之相差很大。
-      选房助手的推荐来自公开数据上的统计规则，它不了解你的财务状况、也没有任何实地信息。
-      做决定前请咨询持牌中介、注册估价师或财务顾问。
-    </p>
-    <h2>关于数据</h2>
-    <ul>
-      <li><b>指标：</b>各郊区「平均房产估值」（对区内全部住宅的自动估值取平均），<em>不是</em>成交价中位数。同期全奥克兰的成交中位价为 <b id="saleMed"></b>，两者口径不同，不可直接比较。</li>
-      <li><b>价格来源：</b>Opes Partners 各郊区市场页（数据更新于 <span id="lu"></span>）。</li>
-      <li><b>边界来源：</b>LINZ《NZ Suburbs and Localities》（CC BY 4.0），已做约 22 米的几何简化。</li>
-      <li><b>配色：</b>发散色阶，中点 = 各郊区估值的中位数；「相对中位数」按与中位数的倍数取对数着色，「分位排名」按排名百分位着色。</li>
-      <li><b>区内热力图：</b>点开某个郊区后看到的是<b>政府估价 CV</b>（Auckland Council 2024-05-01 估值，用于计算 rates），
-        来自议会公开的逐地块估价图层，全区 <span id="nUnits"></span> 个计税单元落入郊区边界。
-        每格约 35 米，取格内 CV 中位数；道路、绿地等格内无地块时，若周围有 3 个及以上相邻格有值，则用邻格中位数补齐，其余留空。
-        色阶中点是<b>该郊区自身的</b> CV 中位数，所以每个区都用满整条色带，不同区之间的颜色不可横向比较。</li>
-      <li><b>CV 的口径：</b>政府估价不是成交价，且包含全部计税单元——公寓单元、商铺、工业地都在内。
-        所以公寓密集处会出现成片低值（那是"一套公寓多少钱"，不是"一栋房子多少钱"），
-        Penrose 这类工业区的 CV 中位数也会明显高于住宅口径。</li>
-      <li><b>郊区简介：</b>英文维基百科（CC BY-SA 4.0），按坐标距离核对后匹配，205 个郊区中 204 个有条目。</li>
-      <li><b>覆盖范围：</b>共 <span id="nTotal"></span> 个郊区/地区，其中 <span id="nPriced"></span> 个有价格数据。斜纹区块无价格数据，多为农村、林地、机场、医院等，但也包含少数住宅区（如 Western Springs、Westgate、Hillpark、Wairau Valley）——价格源未收录。大堡岛（Aotea / Great Barrier）等外海岛屿不在 LINZ 郊区图层内，故未绘制。</li>
-    </ul>
-    <p style="margin:14px 0 0; color:var(--muted)">
-      数据来源：LINZ（CC BY 4.0）· Auckland Council 公开估价图层 · Opes Partners ·
-      English Wikipedia（CC BY-SA 4.0）。页面为静态生成，无追踪、无 cookie、无后端。
-    </p>
-  </div>
+  <div class="notes" id="notes"></div>
 </div>
 
-<button id="aiToggle">🏠 选房助手</button>
+<button id="aiToggle" data-zh="🏠 选房助手" data-en="🏠 Suburb finder">🏠 选房助手</button>
 <div id="aiPanel" hidden>
   <div class="aihead">
-    <b>选房助手</b><span class="tag">预算优先</span><span class="sp"></span>
-    <button id="aiClose" title="收起">×</button>
+    <b data-zh="选房助手" data-en="Suburb finder">选房助手</b><span class="tag" data-zh="预算优先" data-en="Budget first">预算优先</span><span class="sp"></span>
+    <button id="aiClose" data-zh-title="收起" data-en-title="Close">×</button>
   </div>
   <div id="aiLog"></div>
   <div id="aiChips">
-    <button>预算 110 万，三房，北岸</button>
-    <button>预算 90 万投资，看重租金回报</button>
-    <button>预算 150 万，要大院子，离市中心 20 公里内</button>
+    <button data-zh="预算 110 万，三房，北岸" data-en="Budget $1.1m, 3 bedrooms, North Shore">预算 110 万，三房，北岸</button>
+    <button data-zh="预算 90 万投资，看重租金回报" data-en="$900k to invest, want rental yield">预算 90 万投资，看重租金回报</button>
+    <button data-zh="预算 150 万，要大院子，离市中心 20 公里内" data-en="$1.5m, big section, within 20 km of the city">预算 150 万，要大院子，离市中心 20 公里内</button>
   </div>
   <form id="aiForm">
-    <textarea id="aiInput" rows="1" placeholder="例：预算 120 万，三房，上班在市中心"></textarea>
-    <button id="aiSend" type="submit">推荐</button>
+    <textarea id="aiInput" rows="1" data-zh-ph="例：预算 120 万，三房，上班在市中心" data-en-ph="e.g. $1.2m, 3 bedrooms, I work in the CBD"></textarea>
+    <button id="aiSend" type="submit" data-zh="推荐" data-en="Find">推荐</button>
   </form>
   <div class="aifoot">
     <button id="aiKeyBtn"></button><span id="aiKeyState"></span>
@@ -455,6 +435,63 @@ const $ = s => document.querySelector(s);
 const svg = $('#map'), tip = $('#tip');
 const fmt = n => '$' + Math.round(n).toLocaleString('en-NZ');
 const fmtK = n => n >= 1e6 ? '$' + (n/1e6).toFixed(2) + 'M' : '$' + Math.round(n/1000) + 'k';
+
+/* ---------- language ----------
+   Both strings sit at the call site rather than in a key table: a key table
+   drifts the moment someone edits one language and not the other. */
+const LANG_KEY = 'akl_lang';
+function detectLang() {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === 'zh' || saved === 'en') return saved;
+  // Honour the priority order. ["en-GB","en-NZ","zh-Hans-NZ"] is an English
+  // speaker who also reads Chinese, not a Chinese speaker — matching "any zh
+  // anywhere in the list" gets that backwards.
+  const tags = (navigator.languages && navigator.languages.length)
+    ? navigator.languages : [navigator.language || 'en'];
+  for (const tag of tags) {
+    if (/^zh\b/i.test(tag)) return 'zh';
+    if (/^en\b/i.test(tag)) return 'en';
+  }
+  return 'en';
+}
+let LANG = detectLang();
+const L = (zh, en) => (LANG === 'zh' ? zh : en);
+const ZONE_L = {
+  '北岸': 'North Shore', '西区': 'West', '中区': 'Central', '东区': 'East',
+  '南区': 'South', '北部乡村': 'Rodney / rural north', '海岛': 'Gulf islands',
+};
+const zoneL = z => (LANG === 'zh' ? z : (ZONE_L[z] || z || ''));
+
+function applyLang() {
+  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  for (const el of document.querySelectorAll('[data-zh]'))
+    el.textContent = el.dataset[LANG];
+  for (const el of document.querySelectorAll('[data-zh-html]'))
+    el.innerHTML = LANG === 'zh' ? el.dataset.zhHtml : el.dataset.enHtml;
+  for (const el of document.querySelectorAll('[data-zh-ph]'))
+    el.placeholder = LANG === 'zh' ? el.dataset.zhPh : el.dataset.enPh;
+  for (const el of document.querySelectorAll('[data-zh-title]'))
+    el.title = LANG === 'zh' ? el.dataset.zhTitle : el.dataset.enTitle;
+  for (const el of document.querySelectorAll('[data-zh-aria]'))
+    el.setAttribute('aria-label', LANG === 'zh' ? el.dataset.zhAria : el.dataset.enAria);
+  document.querySelectorAll('[data-lang]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.lang === LANG)));
+}
+
+function setLang(next) {
+  // Persist first: clicking the language you are already on is still an
+  // explicit choice, and it has to outrank auto-detection next visit.
+  localStorage.setItem(LANG_KEY, next);
+  if (next === LANG) return;
+  LANG = next;
+  applyLang();
+  fillStats();          // the notes carry spans that applyLang just rebuilt
+  tiles();
+  paint();              // redraws the legend caption
+  if (!$('#tableWrap').hidden) drawTable();
+  if (D) { drawDetailLegend(); sidePanel(D.s); enterDetailChrome(D.s); }
+  resetAssistant();
+}
 
 const all = DATA.suburbs;
 const priced = all.filter(s => s.p).sort((a,b) => a.p - b.p);
@@ -507,7 +544,7 @@ const nodes = new Map();
     el.setAttribute('d', s.d);
     el.dataset.n = s.n;
     const t = document.createElementNS(NS, 'title');
-    t.textContent = s.p ? `${s.n} — ${fmt(s.p)}` : `${s.n} — 无数据`;
+    t.textContent = s.p ? `${s.n} — ${fmt(s.p)}` : `${s.n} — ${L('无数据', 'no data')}`;
     el.appendChild(t);
     frag.appendChild(el);
     nodes.set(s.n, el);
@@ -603,17 +640,17 @@ function showTip(s, e) {
   const rows = [];
   if (s.p) {
     const rel = s.p / MID;
-    rows.push(['相对全区中位', (rel >= 1 ? '×' + rel.toFixed(2) : '×' + rel.toFixed(2))]);
-    if (s.y != null) rows.push(['过去一年', `<span class="${s.y >= 0 ? 'up' : 'down'}">${pct(s.y)}</span>`]);
-    if (s.g != null) rows.push(['长期年增长', s.g.toFixed(1) + '%']);
-    if (s.r) rows.push(['周租金中位', '$' + s.r]);
-    if (s.i) rows.push(['估算租金回报', s.i.toFixed(1) + '%']);
-    if (s.s) rows.push(['中位售出天数', s.s + ' 天']);
-    if (s.c) rows.push(['近 12 月成交', s.c + ' 套']);
+    rows.push([L('相对全区中位', 'vs regional median'), '×' + rel.toFixed(2)]);
+    if (s.y != null) rows.push([L('过去一年', 'past year'), `<span class="${s.y >= 0 ? 'up' : 'down'}">${pct(s.y)}</span>`]);
+    if (s.g != null) rows.push([L('长期年增长', 'long-term growth'), s.g.toFixed(1) + '%']);
+    if (s.r) rows.push([L('周租金中位', 'median rent/wk'), '$' + s.r]);
+    if (s.i) rows.push([L('估算租金回报', 'est. yield'), s.i.toFixed(1) + '%']);
+    if (s.s) rows.push([L('中位售出天数', 'days to sell'), s.s + L(' 天', ' days')]);
+    if (s.c) rows.push([L('近 12 月成交', 'sold, 12m'), s.c + L(' 套', '')]);
   }
   tip.innerHTML =
     `<div class="t">${s.n}</div>` +
-    (s.p ? `<div class="big">${fmt(s.p)}</div>` : `<div class="big" style="font-size:14px;color:var(--muted)">暂无价格数据</div>`) +
+    (s.p ? `<div class="big">${fmt(s.p)}</div>` : `<div class="big" style="font-size:14px;color:var(--muted)">${L('暂无价格数据', 'no price data')}</div>`) +
     (rows.length ? '<dl>' + rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>' : '');
   tip.style.opacity = 1;
   const st = svg.parentElement.getBoundingClientRect();
@@ -662,19 +699,21 @@ function drawLegend() {
     return `<span>${lead}${fmtK(p)}<br><em>${sub}</em></span>`;
   }).join('');
   $('#legendCap').innerHTML = (mode === 'ratio'
-    ? `平均房产估值 — 中点 ${fmt(MID)}（全区郊区中位值），色阶两端为中位数的 ½ 与 2 倍，超出部分取端点色`
-    : `平均房产估值 — 按 ${sortedPrices.length} 个郊区的排名百分位展开（0% 最便宜 → 100% 最贵）`)
-    + `<span class="nd"><span class="ndsw"></span>无价格数据</span>`;
+    ? L(`平均房产估值 — 中点 ${fmt(MID)}（全区郊区中位值），色阶两端为中位数的 ½ 与 2 倍，超出部分取端点色`,
+        `Average house value — centred on ${fmt(MID)}, the median suburb. The ends are half and double that; beyond them the colour clamps.`)
+    : L(`平均房产估值 — 按 ${sortedPrices.length} 个郊区的排名百分位展开（0% 最便宜 → 100% 最贵）`,
+        `Average house value — spread across the rank of all ${sortedPrices.length} suburbs (0% cheapest → 100% dearest)`))
+    + `<span class="nd"><span class="ndsw"></span>${L('无价格数据', 'no price data')}</span>`;
 }
 
 /* ---------- tiles ---------- */
 function tiles() {
   const hi = priced[priced.length - 1], lo = priced[0];
   const items = [
-    ['全区郊区估值中位', fmt(MID), `${priced.length} 个郊区有数据`],
-    ['最贵', fmt(hi.p), hi.n],
-    ['最便宜', fmt(lo.p), lo.n],
-    ['最贵 ÷ 最便宜', '×' + (hi.p / lo.p).toFixed(1), '区内价差倍数'],
+    [L('全区郊区估值中位', 'Median suburb value'), fmt(MID), L(`${priced.length} 个郊区有数据`, `${priced.length} suburbs with data`)],
+    [L('最贵', 'Dearest'), fmt(hi.p), hi.n],
+    [L('最便宜', 'Cheapest'), fmt(lo.p), lo.n],
+    [L('最贵 ÷ 最便宜', 'Dearest ÷ cheapest'), '×' + (hi.p / lo.p).toFixed(1), L('区内价差倍数', 'spread across the region')],
   ];
   $('#tiles').innerHTML = items.map(([k, v, m]) =>
     `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="m">${m}</div></div>`).join('');
@@ -747,6 +786,7 @@ $('#q').addEventListener('input', e => {
   const bb = el.getBBox();
   setView({ x: bb.x, y: bb.y, w: bb.width, h: bb.height }, 3.2);
 });
+
 
 /* ---------- suburb detail ---------- */
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -842,7 +882,7 @@ $('#dmap').addEventListener('pointermove', e => {
   const tip = $('#dtip'), cur = $('#dLcursor');
   if (!c) { tip.style.opacity = 0; cur.style.opacity = 0; return; }
   tip.innerHTML = `<div class="big">${fmt(c.v)}</div>` +
-    `<div class="sm">该网格 CV 中位 · ×${(c.v / D.dt.med).toFixed(2)} 区内中位</div>`;
+    `<div class="sm">${L('该网格 CV 中位', 'median CV in this cell')} · ×${(c.v / D.dt.med).toFixed(2)} ${L('区内中位', 'of suburb median')}</div>`;
   tip.style.opacity = 1;
   const st = $('#dmap').parentElement.getBoundingClientRect();
   let x = e.clientX - st.left + 14, y = e.clientY - st.top + 14;
@@ -858,17 +898,17 @@ $('#dmap').addEventListener('pointerleave', () => {
 
 /* ---------- detail charts ---------- */
 function lineChart(h) {
-  const [y0, vals] = h, W = 320, H = 108, L = 6, R = 6, T = 8, B = 16;
+  const [y0, vals] = h, W = 320, H = 108, PAD = 6, R = 6, T = 8, B = 16;
   const lo = Math.min(...vals), hi = Math.max(...vals);
-  const sx = i => L + i / (vals.length - 1) * (W - L - R);
+  const sx = i => PAD + i / (vals.length - 1) * (W - PAD - R);
   const sy = v => T + (1 - (v - lo) / Math.max(1, hi - lo)) * (H - T - B);
   const pts = vals.map((v, i) => `${sx(i).toFixed(1)},${sy(v).toFixed(1)}`).join(' ');
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" height="108">
     <polygon class="area" points="${sx(0)},${H - B} ${pts} ${sx(vals.length - 1)},${H - B}"/>
     <polyline class="line" points="${pts}"/>
-    <text x="${L}" y="${H - 4}">${y0}</text>
+    <text x="${PAD}" y="${H - 4}">${y0}</text>
     <text x="${W - R}" y="${H - 4}" text-anchor="end">${y0 + vals.length - 1}</text>
-    <text x="${L}" y="${T + 4}">峰值 ${fmtK(hi * 1000)}</text>
+    <text x="${PAD}" y="${T + 4}">${LANG === 'zh' ? '峰值' : 'peak'} ${fmtK(hi * 1000)}</text>
   </svg>`;
 }
 
@@ -881,7 +921,7 @@ function histChart(dt, sc) {
     const mid = dt.histLo * Math.exp(span * (i + 0.5) / n);
     return `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - B - hgt).toFixed(1)}" ` +
       `width="${(bw - 2).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1.5" ` +
-      `fill="${sc.color(mid)}"><title>${fmtK(mid)} · ${c} 套</title></rect>`;
+      `fill="${sc.color(mid)}"><title>${fmtK(mid)} · ${c}${LANG === 'zh' ? ' 套' : ''}</title></rect>`;
   }).join('');
   const mx = Math.max(0, Math.min(W, Math.log(dt.med / dt.histLo) / span * W));
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" height="92">
@@ -898,45 +938,46 @@ function sidePanel(s) {
   const row = (k, v) => v == null ? '' : `<div><span>${k}</span><span>${v}</span></div>`;
 
   const hero = [];
-  if (s.p) hero.push(`<div><div class="k">平均房产估值</div><div class="v">${fmt(s.p)}</div>
-    <div class="m">×${(s.p / MID).toFixed(2)} 全区中位${s.y == null ? '' :
-      ` · <span class="${s.y >= 0 ? 'up' : 'down'}">${pct(s.y)}</span> 近一年`}</div></div>`);
-  if (dt) hero.push(`<div><div class="k">政府估价 CV 中位</div><div class="v">${fmt(dt.med)}</div>
-    <div class="m">${dt.n.toLocaleString('en-NZ')} 个计税单元${dt.chg == null ? '' :
+  if (s.p) hero.push(`<div><div class="k">${L('平均房产估值', 'Average house value')}</div><div class="v">${fmt(s.p)}</div>
+    <div class="m">×${(s.p / MID).toFixed(2)} ${L('全区中位', 'of regional median')}${s.y == null ? '' :
+      ` · <span class="${s.y >= 0 ? 'up' : 'down'}">${pct(s.y)}</span> ${L('近一年', 'past year')}`}</div></div>`);
+  if (dt) hero.push(`<div><div class="k">${L('政府估价 CV 中位', 'Median council CV')}</div><div class="v">${fmt(dt.med)}</div>
+    <div class="m">${dt.n.toLocaleString('en-NZ')} ${L('个计税单元', 'rating units')}${dt.chg == null ? '' :
       ` · <span class="${dt.chg >= 0 ? 'up' : 'down'}">${pct(dt.chg * 100)}</span> vs ${DATA.prevValuationDate.slice(0, 4)}`}</div></div>`);
   if (hero.length) out.push(`<div class="card dhero">${hero.join('')}</div>`);
 
-  if (s.w) out.push(`<div class="card"><h3>简介</h3><p class="dintro">${s.w.extract}
-    <a href="${s.w.url}" target="_blank" rel="noopener">维基百科 ↗</a></p></div>`);
+  if (s.w) out.push(`<div class="card"><h3>${L('简介（英文）', 'About')}</h3><p class="dintro">${s.w.extract}
+    <a href="${s.w.url}" target="_blank" rel="noopener">Wikipedia ↗</a></p></div>`);
 
   const stats = [
-    row('人口', s.o ? s.o.toLocaleString('en-NZ') : null),
-    row('租房人口占比', s.rp == null ? null : s.rp.toFixed(1) + '%'),
-    row('周租金中位', s.r ? '$' + s.r : null),
-    row('估算租金回报', s.i == null ? null : s.i.toFixed(1) + '%'),
-    row('长期年化增长', s.g == null ? null : s.g.toFixed(1) + '%'),
-    row('中位售出天数', s.s ? s.s + ' 天' : null),
-    row('近 12 月成交', s.c ? s.c + ' 套' : null),
-    row('上月挂牌', s.lf ? s.lf + ' 套' : null),
-    row('中位出租天数', s.dr ? s.dr + ' 天' : null),
-    dt ? row('CV 四分位区间', `${fmtK(dt.q[1])} – ${fmtK(dt.q[3])}`) : '',
+    row(L('人口', 'Population'), s.o ? s.o.toLocaleString('en-NZ') : null),
+    row(L('租房人口占比', 'Renters'), s.rp == null ? null : s.rp.toFixed(1) + '%'),
+    row(L('周租金中位', 'Median rent/wk'), s.r ? '$' + s.r : null),
+    row(L('估算租金回报', 'Est. gross yield'), s.i == null ? null : s.i.toFixed(1) + '%'),
+    row(L('长期年化增长', 'Long-term growth'), s.g == null ? null : s.g.toFixed(1) + '%'),
+    row(L('中位售出天数', 'Median days to sell'), s.s ? s.s + L(' 天', ' days') : null),
+    row(L('近 12 月成交', 'Sold, last 12m'), s.c ? s.c + L(' 套', '') : null),
+    row(L('上月挂牌', 'Listed last month'), s.lf ? s.lf + L(' 套', '') : null),
+    row(L('中位出租天数', 'Median days to rent'), s.dr ? s.dr + L(' 天', ' days') : null),
+    dt ? row(L('CV 四分位区间', 'CV interquartile range'), `${fmtK(dt.q[1])} – ${fmtK(dt.q[3])}`) : '',
   ].join('');
-  if (stats) out.push(`<div class="card"><h3>市场概况</h3><div class="dstats">${stats}</div></div>`);
+  if (stats) out.push(`<div class="card"><h3>${L('市场概况', 'Market')}</h3><div class="dstats">${stats}</div></div>`);
 
   if (s.bm) {
-    const labels = ['1 房', '2 房', '3 房', '4 房', '5+ 房'];
+    const labels = LANG === 'zh' ? ['1 房', '2 房', '3 房', '4 房', '5+ 房']
+                                  : ['1 bed', '2 bed', '3 bed', '4 bed', '5+ bed'];
     const bars = s.bm.map((v, i) => v ?
       `<i style="flex:${v};background:${BEDC[i]}" title="${labels[i]} ${v}%">${v >= 12 ? v + '%' : ''}</i>` : '').join('');
     const key = s.bm.map((v, i) => v ?
       `<span><i style="background:${BEDC[i]}"></i><b>${labels[i]}</b> ${v}%${
-        s.br && s.br[i] ? ` · $${s.br[i]}/周` : ''}</span>` : '').join('');
-    out.push(`<div class="card"><h3>户型结构（括号为该户型周租金）</h3><div class="beds">${bars}</div>
+        s.br && s.br[i] ? ` · $${s.br[i]}${L('/周', '/wk')}` : ''}</span>` : '').join('');
+    out.push(`<div class="card"><h3>${L('户型结构（附该户型周租金）', 'Bedroom mix (with weekly rent)')}</h3><div class="beds">${bars}</div>
       <div class="bedkey">${key}</div></div>`);
   }
 
-  if (s.h) out.push(`<div class="card"><h3>房价走势 ${s.h[0]}–${s.h[0] + s.h[1].length - 1}</h3>${lineChart(s.h)}</div>`);
-  if (dt) out.push(`<div class="card"><h3>区内 CV 分布（虚线 = 中位）</h3>${histChart(dt, D.sc)}</div>`);
-  if (!out.length) out.push(`<div class="card"><p class="dintro">该地区没有任何计税单元与市场数据 —— 通常是集水区、林地或保护区。</p></div>`);
+  if (s.h) out.push(`<div class="card"><h3>${L('房价走势', 'Value trend')} ${s.h[0]}–${s.h[0] + s.h[1].length - 1}</h3>${lineChart(s.h)}</div>`);
+  if (dt) out.push(`<div class="card"><h3>${L('区内 CV 分布（虚线 = 中位）', 'CV distribution (dashed = median)')}</h3>${histChart(dt, D.sc)}</div>`);
+  if (!out.length) out.push(`<div class="card"><p class="dintro">${L('该地区没有任何计税单元与市场数据 —— 通常是集水区、林地或保护区。', 'No rating units and no market data here — usually a water catchment, forest or reserve.')}</p></div>`);
 
   $('#dSide').innerHTML = out.join('');
 }
@@ -949,7 +990,8 @@ function drawDetailLegend() {
     return `<span>${lead}${fmtK(v)}<br><em>×${(v / D.sc.med).toFixed(2)}</em></span>`;
   }).join('');
   $('#dLegendCap').textContent =
-    `政府估价 CV（${DATA.valuationDate} 估值）— 中点是该区中位 ${fmt(D.sc.med)}，两端为区内 10 / 90 分位`;
+    L(`政府估价 CV（${DATA.valuationDate} 估值）— 中点是该区中位 ${fmt(D.sc.med)}，两端为区内 10 / 90 分位`,
+      `Council CV (valued ${DATA.valuationDate}) — centred on this suburb's median ${fmt(D.sc.med)}; the ends are its 10th and 90th percentiles`);
 }
 
 /* ---------- enter / leave ---------- */
@@ -967,12 +1009,14 @@ function enterDetail(name, push = true) {
   }
 
   $('#dName').textContent = name;
-  $('#dKind').textContent = s.t === 'Suburb' ? '郊区' : '地区';
+  $('#dKind').textContent = [zoneL(s.z), L(s.t === 'Suburb' ? '郊区' : '地区',
+                              s.t === 'Suburb' ? 'suburb' : 'locality')].filter(Boolean).join(' · ');
   // Catchments and reserves hold no rating units, so there is no grid to draw.
   $('#dGeo').hidden = !dt;
   if (dt) {
-    $('#dKind').textContent += ` · 每格约 ${Math.round(dt.cs * DATA.metresPerUnit)} 米`;
-    $('#dHint').textContent = '悬停查看该网格的 CV 中位数';
+    $('#dKind').textContent += L(` · 每格约 ${Math.round(dt.cs * DATA.metresPerUnit)} 米`,
+                                 ` · ~${Math.round(dt.cs * DATA.metresPerUnit)} m per cell`);
+    $('#dHint').textContent = L('悬停查看该网格的 CV 中位数', 'Hover for the median CV in a cell');
     // let the canvas take the suburb's own shape rather than letterboxing it
     $('#dmap').style.aspectRatio = Math.max(0.72, Math.min(2, s.bx[2] / s.bx[3])).toFixed(3);
   }
@@ -1084,10 +1128,10 @@ const WANT_WORDS = {
 // Things people ask for that this dataset genuinely cannot answer. Saying so is
 // the point — a confident guess about school zones is worse than no answer.
 const UNSUPPORTED = {
-  '学区 / 学校': ['学区', '学校', 'school', 'decile', 'zone in', '教育'],
-  '治安': ['治安', '安全', 'crime', 'safe'],
-  '族裔构成': ['华人', '亚裔', '族裔', 'chinese community', 'asian'],
-  '洪水 / 地质风险': ['洪水', '水浸', '滑坡', 'flood', 'landslide'],
+  school: ['学区', '学校', 'school', 'decile', 'zone in', '教育'],
+  crime: ['治安', '安全', 'crime', 'safe'],
+  ethnicity: ['华人', '亚裔', '族裔', 'chinese community', 'asian'],
+  hazard: ['洪水', '水浸', '滑坡', 'flood', 'landslide'],
 };
 
 function parseRequest(text) {
@@ -1128,11 +1172,18 @@ function parseRequest(text) {
   for (const s of all) if (s.p && t.includes(s.n.toLowerCase())) c.suburbs.push(s.n);
   for (const [w, words] of Object.entries(WANT_WORDS))
     if (words.some(x => t.includes(x))) c.wants.push(w);
-  for (const [label, words] of Object.entries(UNSUPPORTED))
-    if (words.some(x => t.includes(x))) c.missing.push(label);
+  for (const [key, words] of Object.entries(UNSUPPORTED))
+    if (words.some(x => t.includes(x))) c.missing.push(key);
   c.wants = [...new Set(c.wants)];
   return c;
 }
+
+const MISSING_LABEL = {
+  school: ['学区 / 学校', 'school zones'], crime: ['治安', 'crime'],
+  ethnicity: ['族裔构成', 'ethnic makeup'], hazard: ['洪水 / 地质风险', 'flood and landslide risk'],
+};
+const missingLabels = keys => keys.map(k => MISSING_LABEL[k][LANG === 'zh' ? 0 : 1])
+  .join(L('、', ', ')) + L('的数据目前不在这个数据集里', ' is not in this dataset');
 
 /* ---------- scoring ---------- */
 const REF = DATA.ref;
@@ -1189,60 +1240,82 @@ function prosCons(r, c) {
 
   if (r.a !== null) {
     if (r.a >= 0.35)
-      pro.push(`预算内可选约 ${pctS(r.a)} 的房子（区内 ${dt.n.toLocaleString('en-NZ')} 个计税单元）`);
+      pro.push(L(`预算内可选约 ${pctS(r.a)} 的房子（区内 ${dt.n.toLocaleString('en-NZ')} 个计税单元）`,
+                 `About ${pctS(r.a)} of homes here fit the budget (${dt.n.toLocaleString('en-NZ')} rating units)`));
     else
-      con.push(`预算内只有约 ${pctS(r.a)} 的房子，选择面窄`);
+      con.push(L(`预算内只有约 ${pctS(r.a)} 的房子，选择面窄`,
+                 `Only about ${pctS(r.a)} of homes here fit the budget — a thin choice`));
     if (r.a > 0.93 && c.budget)
-      con.push(`预算高出这个区不少，${pctS(r.a)} 的房子都在预算内，可能买得比需要的更便宜`);
+      con.push(L(`预算高出这个区不少，${pctS(r.a)} 的房子都在预算内，可能买得比需要的更便宜`,
+                 `Your budget sits well above this suburb — ${pctS(r.a)} of it is affordable, so you may be buying below what you could`));
   }
   const spread = dt.q[3] / dt.q[1];
   if (spread > 2.2)
-    con.push(`区内价差大（中间 50% 落在 ${fmtK(dt.q[1])}–${fmtK(dt.q[3])}），街区选择很关键`);
+    con.push(L(`区内价差大（中间 50% 落在 ${fmtK(dt.q[1])}–${fmtK(dt.q[3])}），街区选择很关键`,
+               `Wide spread inside the suburb (middle 50% runs ${fmtK(dt.q[1])}–${fmtK(dt.q[3])}) — which street matters a lot`));
 
-  if (s.y != null && s.y <= -4) con.push(`过去一年估值下跌 ${Math.abs(s.y).toFixed(1)}%`);
-  if (s.y != null && s.y >= 1.5) pro.push(`过去一年估值上涨 ${s.y.toFixed(1)}%`);
-  if (s.g != null && s.g >= REF.growth.p75) pro.push(`长期年化增长 ${s.g.toFixed(1)}%，全区前 25%`);
-  if (s.g != null && s.g <= REF.growth.p25) con.push(`长期年化增长 ${s.g.toFixed(1)}%，全区后 25%`);
+  if (s.y != null && s.y <= -4) con.push(L(`过去一年估值下跌 ${Math.abs(s.y).toFixed(1)}%`,
+                                           `Down ${Math.abs(s.y).toFixed(1)}% over the past year`));
+  if (s.y != null && s.y >= 1.5) pro.push(L(`过去一年估值上涨 ${s.y.toFixed(1)}%`,
+                                           `Up ${s.y.toFixed(1)}% over the past year`));
+  if (s.g != null && s.g >= REF.growth.p75) pro.push(L(`长期年化增长 ${s.g.toFixed(1)}%，全区前 25%`,
+                                                      `Long-term growth ${s.g.toFixed(1)}%/yr — top quartile for the region`));
+  if (s.g != null && s.g <= REF.growth.p25) con.push(L(`长期年化增长 ${s.g.toFixed(1)}%，全区后 25%`,
+                                                      `Long-term growth ${s.g.toFixed(1)}%/yr — bottom quartile for the region`));
 
   if (s.i != null && s.i >= REF.yield.p75)
-    pro.push(`租金回报 ${s.i.toFixed(1)}%，全区前 25%（周租中位 $${s.r}）`);
+    pro.push(L(`租金回报 ${s.i.toFixed(1)}%，全区前 25%（周租中位 $${s.r}）`,
+               `Gross yield ${s.i.toFixed(1)}% — top quartile (median rent $${s.r}/wk)`));
   if (s.i != null && s.i <= REF.yield.p25 && c.wants.includes('invest'))
-    con.push(`租金回报 ${s.i.toFixed(1)}%，全区后 25%，不适合收租`);
+    con.push(L(`租金回报 ${s.i.toFixed(1)}%，全区后 25%，不适合收租`,
+               `Gross yield ${s.i.toFixed(1)}% — bottom quartile; poor for renting out`));
 
-  if (s.s != null && s.s <= REF.days.p25) pro.push(`中位 ${s.s} 天售出，比全区快`);
-  if (s.s != null && s.s >= REF.days.p75) con.push(`中位 ${s.s} 天才售出，市场偏冷`);
-  if (s.c != null && s.c < 25) con.push(`近 12 个月只成交 ${s.c} 套，流动性低、可比案例少`);
-  else if (s.c != null && s.c >= REF.sold.p75) pro.push(`近 12 个月成交 ${s.c} 套，选择多`);
+  if (s.s != null && s.s <= REF.days.p25) pro.push(L(`中位 ${s.s} 天售出，比全区快`,
+                                                     `Sells in ${s.s} days at the median — faster than the region`));
+  if (s.s != null && s.s >= REF.days.p75) con.push(L(`中位 ${s.s} 天才售出，市场偏冷`,
+                                                    `Takes ${s.s} days to sell at the median — a slow market`));
+  if (s.c != null && s.c < 25) con.push(L(`近 12 个月只成交 ${s.c} 套，流动性低、可比案例少`,
+                                          `Only ${s.c} sales in 12 months — thin, and few comparables`));
+  else if (s.c != null && s.c >= REF.sold.p75) pro.push(L(`近 12 个月成交 ${s.c} 套，选择多`,
+                                                         `${s.c} sales in 12 months — plenty comes up`));
 
   if (s.km != null) {
-    if (s.km <= 12) pro.push(`离市中心 ${s.km} km`);
-    else if (s.km >= 28) con.push(`离市中心 ${s.km} km，通勤是主要代价`);
+    if (s.km <= 12) pro.push(L(`离市中心 ${s.km} km`, `${s.km} km from the city centre`));
+    else if (s.km >= 28) con.push(L(`离市中心 ${s.km} km，通勤是主要代价`,
+                                    `${s.km} km out — the commute is the real cost`));
   }
   if (s.hs != null) {
     const hp = (s.hs * 100).toFixed(0);
     if (s.hs >= 0.65)
-      pro.push(`${hp}% 的房源是 ≥300 m² 的独立地块${s.la ? `（中位 ${s.la} m²）` : ''}`);
+      pro.push(L(`${hp}% 的房源是 ≥300 m² 的独立地块${s.la ? `（中位 ${s.la} m²）` : ''}`,
+                 `${hp}% of homes sit on a section of 300 m² or more${s.la ? ` (median ${s.la} m²)` : ''}`));
     else if (s.hs <= 0.30) {
-      const line = `只有 ${hp}% 的房源有独立地块，绝大多数是公寓或单元房`;
+      const line = L(`只有 ${hp}% 的房源有独立地块，绝大多数是公寓或单元房`,
+                     `Only ${hp}% of homes have their own section — this is apartments and units`);
       // Which side of the ledger that sits on depends on what was asked for.
       (c.wants.includes('apartment') ? pro : con).push(line);
     }
     else if (s.la && s.la <= 300)
-      con.push(`地块中位仅 ${s.la} m²，多为联排`);
+      con.push(L(`地块中位仅 ${s.la} m²，多为联排`, `Median section just ${s.la} m² — mostly terraces`));
   }
   const dn = density(s);
-  if (dn !== null && dn >= 4000) con.push(`人口密度 ${Math.round(dn).toLocaleString('en-NZ')} 人/km²，居住密集`);
+  if (dn !== null && dn >= 4000) con.push(L(`人口密度 ${Math.round(dn).toLocaleString('en-NZ')} 人/km²，居住密集`,
+                                            `${Math.round(dn).toLocaleString('en-NZ')} people/km² — densely built`));
   else if (dn !== null && dn <= 700 && c.wants.includes('quiet'))
-    pro.push(`人口密度仅 ${Math.round(dn)} 人/km²，安静`);
+    pro.push(L(`人口密度仅 ${Math.round(dn)} 人/km²，安静`, `Just ${Math.round(dn)} people/km² — quiet`));
   const flats = ((s.bm || [])[0] || 0) + ((s.bm || [])[1] || 0);
   if (c.beds >= 3 && flats >= 55)
-    con.push(`一两房占 ${flats.toFixed(0)}%，${c.beds} 房选择相对少`);
+    con.push(L(`一两房占 ${flats.toFixed(0)}%，${c.beds} 房选择相对少`,
+               `${flats.toFixed(0)}% is one and two bedroom — fewer ${c.beds}-bed options`));
   if (c.beds && (s.bm || [])[Math.min(4, c.beds - 1)] >= 32)
-    pro.push(`${c.beds} 房占 ${s.bm[Math.min(4, c.beds - 1)].toFixed(0)}%，主力户型`);
+    pro.push(L(`${c.beds} 房占 ${s.bm[Math.min(4, c.beds - 1)].toFixed(0)}%，主力户型`,
+               `${c.beds}-bed is ${s.bm[Math.min(4, c.beds - 1)].toFixed(0)}% of stock — the main type here`));
   if (s.rp != null && s.rp >= 45)
-    con.push(`租房人口占 ${s.rp.toFixed(0)}%，自住氛围偏弱`);
+    con.push(L(`租房人口占 ${s.rp.toFixed(0)}%，自住氛围偏弱`,
+               `${s.rp.toFixed(0)}% renters — less of an owner-occupier feel`));
   if (dt.chg != null && dt.chg <= -0.12)
-    con.push(`2021→2024 政府重估下调 ${Math.abs(dt.chg * 100).toFixed(0)}%`);
+    con.push(L(`2021→2024 政府重估下调 ${Math.abs(dt.chg * 100).toFixed(0)}%`,
+               `Council revaluation cut ${Math.abs(dt.chg * 100).toFixed(0)}% from 2021 to 2024`));
 
   return { pro: pro.slice(0, 4), con: con.slice(0, 4) };
 }
@@ -1251,26 +1324,26 @@ function prosCons(r, c) {
 function diagnose(c) {
   const count = cc => all.map(s => scoreSuburb(s, cc)).filter(Boolean).length;
   const trials = [
-    ['区域限制', { ...c, zones: [], suburbs: [] }],
-    ['通勤距离', { ...c, maxKm: null }],
-    ['独立地块要求', { ...c, wants: c.wants.filter(w => w !== 'land') }],
-    ['房型要求', { ...c, beds: null }],
+    [L('区域限制', 'the area'), { ...c, zones: [], suburbs: [] }],
+    [L('通勤距离', 'the distance'), { ...c, maxKm: null }],
+    [L('独立地块要求', 'needing a section'), { ...c, wants: c.wants.filter(w => w !== 'land') }],
+    [L('房型要求', 'the bedroom count'), { ...c, beds: null }],
   ].filter(([, cc]) => JSON.stringify(cc) !== JSON.stringify(c));
 
   const helps = trials.map(([label, cc]) => [label, count(cc)]).filter(([, n]) => n > 0);
   const out = [];
   if (helps.length)
-    out.push('<br>放宽其中一条就有结果：' +
-      helps.map(([l, n]) => `<b>${l}</b>（${n} 个）`).join('、'));
+    out.push(L('<br>放宽其中一条就有结果：', '<br>Relaxing any one of these opens it up: ') +
+      helps.map(([l, n]) => L(`<b>${l}</b>（${n} 个）`, `<b>${l}</b> (${n})`)).join(L('、', ', ')));
 
   // cheapest entry point that satisfies everything except the budget
   const noBudget = all.map(s => scoreSuburb(s, { ...c, budget: null })).filter(Boolean);
   if (noBudget.length) {
     const best = noBudget.map(r => r.s).sort((a, b) => a.dt.q[1] - b.dt.q[1])[0];
-    out.push(`<br>其余条件不变的话，最低门槛在 <b>${best.n}</b>，` +
-             `那里 25% 分位的 CV 是 ${fmt(best.dt.q[1])} —— 预算要到这个量级才有得选。`);
+    out.push(L(`<br>其余条件不变的话，最低门槛在 <b>${best.n}</b>，那里 25% 分位的 CV 是 ${fmt(best.dt.q[1])} —— 预算要到这个量级才有得选。`,
+               `<br>Keeping everything else, the cheapest way in is <b>${best.n}</b>, where the 25th-percentile CV is ${fmt(best.dt.q[1])} — that is the budget this needs.`));
   }
-  return out.join('') || '<br>把预算或区域放宽一些再试。';
+  return out.join('') || L('<br>把预算或区域放宽一些再试。', '<br>Try a larger budget or a wider area.');
 }
 
 /* ---------- rendering ---------- */
@@ -1289,14 +1362,14 @@ function renderRec(r, c, rank) {
   el.className = 'rec';
   el.innerHTML = `
     <div class="top"><span class="nm">${s.n}</span>
-      <span class="zn">${s.z || ''} · ${s.km} km</span>
+      <span class="zn">${zoneL(s.z)} · ${s.km} km</span>
       <span class="rank">#${rank}</span></div>
-    <div class="price"><b>${fmt(s.p)}</b> 平均估值 · CV 中位 ${fmt(s.dt.med)}</div>
+    <div class="price"><b>${fmt(s.p)}</b> ${L('平均估值 · CV 中位', 'avg value · median CV')} ${fmt(s.dt.med)}</div>
     ${r.a === null ? '' : `<div class="fitbar"><i style="width:${(r.a * 100).toFixed(0)}%"></i></div>
-      <div class="fitcap">预算内可选 ${(r.a * 100).toFixed(0)}% 的房子</div>`}
+      <div class="fitcap">${L(`预算内可选 ${(r.a * 100).toFixed(0)}% 的房子`, `${(r.a * 100).toFixed(0)}% of homes fit the budget`)}</div>`}
     <ul>${pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
         ${pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
-    <button class="go">打开 ${s.n} 热力图 →</button>`;
+    <button class="go">${L(`打开 ${s.n} 热力图 →`, `Open ${s.n} heat map →`)}</button>`;
   el.querySelector('.go').addEventListener('click', () => {
     enterDetail(s.n);
     if (innerWidth < 900) closePanel();
@@ -1306,16 +1379,19 @@ function renderRec(r, c, rank) {
 
 function describeCriteria(c) {
   const bits = [];
-  if (c.budget) bits.push(`预算 <b>${fmt(c.budget)}</b>`);
-  if (c.beds) bits.push(`${c.beds} 房`);
-  if (c.zones.length) bits.push(c.zones.join(' / '));
+  if (c.budget) bits.push(L(`预算 <b>${fmt(c.budget)}</b>`, `budget <b>${fmt(c.budget)}</b>`));
+  if (c.beds) bits.push(L(`${c.beds} 房`, `${c.beds} bed`));
+  if (c.zones.length) bits.push(c.zones.map(zoneL).join(' / '));
   if (c.suburbs.length) bits.push(c.suburbs.join(' / '));
-  if (c.maxKm) bits.push(`离市中心 ≤ ${c.maxKm} km`);
-  const labels = { invest: '投资收租', quiet: '安静', land: '大地块',
-                   apartment: '公寓', commute: '通勤方便', coastal: '近海',
-                   growth: '看重升值', liquid: '好脱手' };
+  if (c.maxKm) bits.push(L(`离市中心 ≤ ${c.maxKm} km`, `within ${c.maxKm} km of the city`));
+  const labels = LANG === 'zh'
+    ? { invest: '投资收租', quiet: '安静', land: '大地块', apartment: '公寓',
+        commute: '通勤方便', coastal: '近海', growth: '看重升值', liquid: '好脱手' }
+    : { invest: 'rental yield', quiet: 'quiet', land: 'a section', apartment: 'apartment',
+        commute: 'easy commute', coastal: 'near the coast', growth: 'capital growth',
+        liquid: 'easy to resell' };
   c.wants.forEach(w => labels[w] && bits.push(labels[w]));
-  return bits.length ? bits.join('、') : '（没读出具体条件）';
+  return bits.length ? bits.join(L('、', ', ')) : L('（没读出具体条件）', '(nothing specific read)');
 }
 
 async function handle(text) {
@@ -1332,32 +1408,36 @@ async function handle(text) {
       c = { ...c, ...out.criteria, wants: [...new Set([...(c.wants || []), ...(out.criteria?.wants || [])])] };
       intro = out.intro;
     } else if (out && out.error) {
-      say(`<span class="warn">模型调用失败（${out.error}），已改用本地规则。</span>`);
+      say(`<span class="warn">${L(`模型调用失败（${out.error}），已改用本地规则。`,
+             `Model call failed (${out.error}); using local rules instead.`)}</span>`);
     }
   }
 
   if (!c.budget) {
-    say('先告诉我<b>预算上限</b>吧 —— 预算是第一优先级，没有它我没法判断哪些区是真的够得着的。' +
-        '例如「预算 110 万，三房，北岸」。');
+    say(L('先告诉我<b>预算上限</b>吧 —— 预算是第一优先级，没有它我没法判断哪些区是真的够得着的。例如「预算 110 万，三房，北岸」。',
+          'Tell me your <b>budget ceiling</b> first — budget is the first filter, and without it I cannot tell which suburbs you can actually buy in. For example: "$1.1m, 3 bedrooms, North Shore".'));
     AI.busy = false; $('#aiSend').disabled = false; return;
   }
-  say(`读到的条件：${describeCriteria(c)}`);
+  say(L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`));
   if (c.missing.length)
-    say(`<span class="warn">${c.missing.join('、')}的数据目前不在这个数据集里</span>，` +
-        `所以下面的推荐<b>没有</b>把它纳入考虑，我也不会替你猜。`);
+    say(`<span class="warn">${missingLabels(c.missing)}</span>` +
+        L('，所以下面的推荐<b>没有</b>把它纳入考虑，我也不会替你猜。',
+          ' — so the shortlist below does <b>not</b> account for it, and I will not guess.'));
 
   const scored = all.map(s => scoreSuburb(s, c)).filter(Boolean)
                     .sort((x, y) => y.total - x.total);
   if (!scored.length) {
-    say(`按这些条件<b>没有</b>匹配的郊区。` + diagnose(c));
+    say(L('按这些条件<b>没有</b>匹配的郊区。', '<b>No</b> suburb matches all of that.') + diagnose(c));
     AI.busy = false; $('#aiSend').disabled = false; return;
   }
 
   const picks = scored.slice(0, 3);
-  say(intro || `按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`);
+  say(intro || L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
+                 `Budget first: ${scored.length} suburbs are within reach. These three fit best:`));
   const box = say('');
   picks.forEach((r, i) => box.appendChild(renderRec(r, c, i + 1)));
-  say(`已打开 <b>${picks[0].s.n}</b> 的区内热力图 —— 注意同一个区里街区差别可能比区之间还大。`);
+  say(L(`已打开 <b>${picks[0].s.n}</b> 的区内热力图 —— 注意同一个区里街区差别可能比区之间还大。`,
+        `Opened the heat map inside <b>${picks[0].s.n}</b> — note the spread between streets in one suburb can beat the spread between suburbs.`));
   enterDetail(picks[0].s.n);
 
   AI.busy = false;
@@ -1417,33 +1497,129 @@ document.querySelectorAll('#aiChips button').forEach(b =>
 
 function refreshKeyUi() {
   const has = !!AI.key();
-  $('#aiKeyState').textContent = has ? '模型已接入' : '纯本地规则';
+  $('#aiKeyState').textContent = has ? L('模型已接入', 'model connected') : L('纯本地规则', 'local rules only');
   $('#aiKeyState').className = has ? 'on' : '';
-  $('#aiKeyBtn').textContent = has ? '更换 / 清除 Key' : '接入模型（可选）';
+  $('#aiKeyBtn').textContent = has ? L('更换 / 清除 Key', 'Change / clear key') : L('接入模型（可选）', 'Connect a model (optional)');
 }
 $('#aiKeyBtn').addEventListener('click', () => {
   const cur = AI.key();
   const v = prompt(
-    'Anthropic API Key（可选）\n\n' +
-    '不填也能用：选区、打分、优缺点全部由本地数据算出，模型只负责读懂你的话和写开场白。\n' +
-    'Key 存在这台电脑的 localStorage 里，不会写进 heatmap.html，也不会进 git。\n\n' +
-    '留空并确定 = 清除。', cur);
+    L('Anthropic API Key（可选）\n\n不填也能用：选区、打分、优缺点全部由本地数据算出，模型只负责读懂你的话和写开场白。\nKey 存在这台电脑的 localStorage 里，不会写进 heatmap.html，也不会进 git。\n\n留空并确定 = 清除。',
+      'Anthropic API key (optional)\n\nEverything works without it: the shortlist, the scoring and the pros and cons are all computed locally. The model only reads your request and writes the opening line.\nThe key is stored in this browser\u2019s localStorage — never written into heatmap.html, never committed.\n\nSubmit empty to clear.'), cur);
   if (v === null) return;
   if (v.trim()) localStorage.setItem('akl_api_key', v.trim());
   else localStorage.removeItem('akl_api_key');
   refreshKeyUi();
 });
 refreshKeyUi();
-say('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，' +
-    '并说清每个区的好处和代价。<br>价格口径：平均估值与议会 CV，都不是成交价。');
+function resetAssistant() {
+  $('#aiLog').innerHTML = '';
+  say(L('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，并说清每个区的好处和代价。<br>价格口径：平均估值与议会 CV，都不是成交价。',
+        'Tell me your <b>budget</b> and roughly where you want to be. I shortlist suburbs budget-first and spell out what each one costs you.<br>All figures are estimates — automated valuations and council CVs, not sale prices.'));
+}
+resetAssistant();
+
+
+/* ---------- long-form copy ---------- */
+function notesHtml() {
+  return LANG === 'zh' ? `
+    <h2>免责声明</h2>
+    <p style="margin:0 0 16px">个人研究项目，<b>不构成投资或购房建议</b>。页面上所有价格都是<b>估值</b>
+      —— 自动估值模型与议会政府估价（CV）—— <b>不是成交价</b>，个体房产可能与之相差很大。
+      选房助手的推荐来自公开数据上的统计规则，它不了解你的财务状况、也没有任何实地信息。
+      做决定前请咨询持牌中介、注册估价师或财务顾问。</p>
+    <h2>关于数据</h2>
+    <ul>
+      <li><b>指标：</b>各郊区「平均房产估值」（对区内全部住宅的自动估值取平均），<em>不是</em>成交价中位数。同期全奥克兰的成交中位价为 <b id="saleMed"></b>，两者口径不同，不可直接比较。</li>
+      <li><b>价格来源：</b>Opes Partners 各郊区市场页（数据更新于 <span id="lu"></span>）。</li>
+      <li><b>边界来源：</b>LINZ《NZ Suburbs and Localities》（CC BY 4.0），已做约 22 米的几何简化。</li>
+      <li><b>配色：</b>发散色阶，中点 = 各郊区估值的中位数；「相对中位数」按与中位数的倍数取对数着色，「分位排名」按排名百分位着色。</li>
+      <li><b>区内热力图：</b>点开某个郊区后看到的是<b>政府估价 CV</b>（Auckland Council 2024-05-01 估值，用于计算 rates），来自议会公开的逐地块估价图层，全区 <span id="nUnits"></span> 个计税单元落入郊区边界。每格约 35 米，取格内 CV 中位数；道路、绿地等格内无地块时，若周围有 3 个及以上相邻格有值，则用邻格中位数补齐，其余留空。色阶中点是<b>该郊区自身的</b> CV 中位数，所以每个区都用满整条色带，不同区之间的颜色不可横向比较。</li>
+      <li><b>CV 的口径：</b>政府估价不是成交价，且包含全部计税单元——公寓单元、商铺、工业地都在内。所以公寓密集处会出现成片低值（那是"一套公寓多少钱"，不是"一栋房子多少钱"），Penrose 这类工业区的 CV 中位数也会明显高于住宅口径。</li>
+      <li><b>郊区简介：</b>英文维基百科（CC BY-SA 4.0），按坐标距离核对后匹配，205 个郊区中 204 个有条目。<b>简介只有英文</b>，因为中文维基几乎没有奥克兰郊区条目。</li>
+      <li><b>覆盖范围：</b>共 <span id="nTotal"></span> 个郊区/地区，其中 <span id="nPriced"></span> 个有价格数据。斜纹区块无价格数据，多为农村、林地、机场、医院等，但也包含少数住宅区（如 Western Springs、Westgate、Hillpark、Wairau Valley）——价格源未收录。大堡岛（Aotea / Great Barrier）等外海岛屿不在 LINZ 郊区图层内，故未绘制。</li>
+    </ul>
+    <p style="margin:14px 0 0; color:var(--muted)">数据来源：LINZ（CC BY 4.0）· Auckland Council 公开估价图层 · Opes Partners · English Wikipedia（CC BY-SA 4.0）。页面为静态生成，无追踪、无 cookie、无后端。</p>
+  ` : `
+    <h2>Disclaimer</h2>
+    <p style="margin:0 0 16px">A personal research project. <b>Not investment or property advice.</b>
+      Every figure here is an <b>estimate</b> — an automated valuation model, or the council's
+      rating valuation (CV) — <b>not a sale price</b>, and an individual property can sit a long way
+      from it. The suburb finder applies statistical rules to public data; it knows nothing about your
+      finances and has never seen the houses. Talk to a licensed agent, a registered valuer or a
+      financial adviser before deciding anything.</p>
+    <h2>About the data</h2>
+    <ul>
+      <li><b>The measure:</b> each suburb's <em>average house value</em> — the mean automated valuation
+        across its housing stock — <em>not</em> a median sale price. Auckland's median sale price over the
+        same period was <b id="saleMed"></b>; the two are different measures and are not comparable.</li>
+      <li><b>Prices:</b> Opes Partners per-suburb market pages (source last refreshed <span id="lu"></span>).</li>
+      <li><b>Boundaries:</b> LINZ <i>NZ Suburbs and Localities</i> (CC BY 4.0), simplified to about 22 m.</li>
+      <li><b>Colour:</b> a diverging scale centred on the median of the suburb values. "Vs median" colours by
+        the log of the ratio to that median; "Percentile" colours by rank.</li>
+      <li><b>Inside a suburb:</b> opening a suburb shows <b>council capital values</b> (Auckland Council,
+        valued 2024-05-01, the basis for rates), from the council's public per-parcel layer —
+        <span id="nUnits"></span> rating units fall inside a suburb boundary. Cells are about 35 m and hold the
+        median CV within them. Where a cell contains no parcel — roads, reserves — it is filled from the median
+        of its neighbours if at least three of them have a value, and left blank otherwise. The scale is centred
+        on <b>that suburb's own</b> median, so every suburb uses the full colour range and
+        <b>colours are not comparable between suburbs</b>.</li>
+      <li><b>What a CV is:</b> a rating valuation, not a sale price, and it covers every rating unit —
+        apartments, shops and industrial land included. Apartment-dense areas therefore show blocks of low
+        values (that is "what one apartment costs", not "what a house costs"), and an industrial suburb like
+        Penrose reads far above what a residential-only figure would.</li>
+      <li><b>Suburb intros:</b> English Wikipedia (CC BY-SA 4.0), matched by checking the article's coordinates
+        against the suburb centroid; 204 of 205 suburbs have one. <b>Intros are English only</b> — Chinese
+        Wikipedia has almost no articles on Auckland suburbs.</li>
+      <li><b>Coverage:</b> <span id="nTotal"></span> suburbs and localities, <span id="nPriced"></span> of them with price
+        data. Hatched areas have none: mostly rural land, forest, the airport and hospitals, but also a few
+        genuinely residential suburbs (Western Springs, Westgate, Hillpark, Wairau Valley) that the price source
+        does not cover. Aotea / Great Barrier and the outer gulf islands are not in the LINZ suburb layer and are
+        not drawn.</li>
+    </ul>
+    <p style="margin:14px 0 0; color:var(--muted)">Sources: LINZ (CC BY 4.0) · Auckland Council public valuation
+      layer · Opes Partners · English Wikipedia (CC BY-SA 4.0). Statically generated — no tracking, no cookies,
+      no backend.</p>
+  `;
+}
+
+function subCopy() {
+  return LANG === 'zh'
+    ? `按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），数据截至 <b>${DATA.asAt}</b>。
+       颜色像气温图：<b>越红越贵，越蓝越便宜</b>，灰白色 = 接近全区中位水平。
+       <b>点击任一郊区</b>可查看该区简介与区内逐街区的房价热力图。`
+    : `<b>Average house value</b> by suburb, as at <b>${DATA.asAtEn || 'June 2026'}</b>. The colour reads like a
+       temperature map: <b>redder is dearer, bluer is cheaper</b>, near-neutral means close to the regional median.
+       <b>Click any suburb</b> for an intro and a block-by-block heat map inside it.`;
+}
+
+function fillStats() {
+  $('#notes').innerHTML = notesHtml();
+  $('#subCopy').innerHTML = subCopy();
+  const set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+  set('#saleMed', fmt(DATA.regionSaleMedian));
+  set('#lu', DATA.lastUpdated);
+  set('#nUnits', DATA.unitsMatched.toLocaleString('en-NZ'));
+  set('#nTotal', all.length);
+  set('#nPriced', priced.length);
+}
+
+function enterDetailChrome(s) {
+  $('#dName').textContent = s.n;
+  $('#dKind').textContent = [zoneL(s.z), L(s.t === 'Suburb' ? '郊区' : '地区',
+                             s.t === 'Suburb' ? 'suburb' : 'locality')].filter(Boolean).join(' · ');
+  if (s.dt) {
+    $('#dKind').textContent += L(` · 每格约 ${Math.round(s.dt.cs * DATA.metresPerUnit)} 米`,
+                                 ` · ~${Math.round(s.dt.cs * DATA.metresPerUnit)} m per cell`);
+    $('#dHint').textContent = L('悬停查看该网格的 CV 中位数', 'Hover for the median CV in a cell');
+  }
+}
+document.querySelectorAll('[data-lang]').forEach(b =>
+  b.addEventListener('click', () => setLang(b.dataset.lang)));
 
 /* ---------- boot ---------- */
-$('#asAt').textContent = DATA.asAt;
-$('#lu').textContent = DATA.lastUpdated;
-$('#saleMed').textContent = fmt(DATA.regionSaleMedian);
-$('#nTotal').textContent = all.length;
-$('#nPriced').textContent = priced.length;
-$('#nUnits').textContent = DATA.unitsMatched.toLocaleString('en-NZ');
+applyLang();
+fillStats();
 tiles();
 paint();
 applyVB();
