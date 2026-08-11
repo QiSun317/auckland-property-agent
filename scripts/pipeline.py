@@ -143,6 +143,10 @@ SOURCES = [
 
 BUILD_STEPS = ["build_db.py", "build_detail.py", "build_map.py"]
 
+# Optional last step: push the rebuilt page to the public site. Off unless
+# AKL_PUBLISH=1, so a local run never publishes by accident.
+PUBLISH = ROOT / "ops" / "publish.sh"
+
 
 # --------------------------------------------------------------------------
 # state
@@ -285,6 +289,13 @@ def do_run(args):
         rebuilt = build_error is None
     else:
         print("  nothing changed, no rebuild")
+
+    if rebuilt and os.environ.get("AKL_PUBLISH") == "1" and PUBLISH.exists():
+        pr = subprocess.run(["bash", str(PUBLISH)], capture_output=True, text=True)
+        line = (pr.stdout.strip().splitlines() or [""])[-1][:160]
+        print(f"    publish            {'ok' if pr.returncode == 0 else 'FAILED'}  {line}")
+        if pr.returncode != 0:
+            build_error = build_error or f"publish: {pr.stderr.strip()[:200]}"
 
     status = "failed" if build_error else ("ok" if not any(
         s["status"] == "failed" for s in steps) else "partial")

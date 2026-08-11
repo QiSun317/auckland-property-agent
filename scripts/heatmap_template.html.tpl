@@ -397,6 +397,13 @@
   </div>
 
   <div class="notes">
+    <h2>免责声明</h2>
+    <p style="margin:0 0 16px">
+      个人研究项目，<b>不构成投资或购房建议</b>。页面上所有价格都是<b>估值</b>
+      —— 自动估值模型与议会政府估价（CV）—— <b>不是成交价</b>，个体房产可能与之相差很大。
+      选房助手的推荐来自公开数据上的统计规则，它不了解你的财务状况、也没有任何实地信息。
+      做决定前请咨询持牌中介、注册估价师或财务顾问。
+    </p>
     <h2>关于数据</h2>
     <ul>
       <li><b>指标：</b>各郊区「平均房产估值」（对区内全部住宅的自动估值取平均），<em>不是</em>成交价中位数。同期全奥克兰的成交中位价为 <b id="saleMed"></b>，两者口径不同，不可直接比较。</li>
@@ -413,6 +420,10 @@
       <li><b>郊区简介：</b>英文维基百科（CC BY-SA 4.0），按坐标距离核对后匹配，205 个郊区中 204 个有条目。</li>
       <li><b>覆盖范围：</b>共 <span id="nTotal"></span> 个郊区/地区，其中 <span id="nPriced"></span> 个有价格数据。斜纹区块无价格数据，多为农村、林地、机场、医院等，但也包含少数住宅区（如 Western Springs、Westgate、Hillpark、Wairau Valley）——价格源未收录。大堡岛（Aotea / Great Barrier）等外海岛屿不在 LINZ 郊区图层内，故未绘制。</li>
     </ul>
+    <p style="margin:14px 0 0; color:var(--muted)">
+      数据来源：LINZ（CC BY 4.0）· Auckland Council 公开估价图层 · Opes Partners ·
+      English Wikipedia（CC BY-SA 4.0）。页面为静态生成，无追踪、无 cookie、无后端。
+    </p>
   </div>
 </div>
 
