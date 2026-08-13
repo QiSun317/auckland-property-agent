@@ -387,6 +387,17 @@ def main():
 
     # Write then rename, so a scheduled rebuild never leaves a half-written
     # page for whoever has it open in a browser tab.
+    # Slice-based edits to the template have twice deleted functions that
+    # happened to sit between the anchors. Syntax stays valid, so it only
+    # surfaces at runtime — check the names are all still there.
+    required = ["figuresCheckOut", "claimsCheckOut", "HARD_BLOCK", "SOFT_SOURCE",
+                "smoothField", "fieldImage", "drawDetailMap", "enterDetail",
+                "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang"]
+    missing = [n for n in required
+               if f"function {n}" not in body and f"const {n}" not in body]
+    if missing:
+        raise SystemExit(f"template is missing: {', '.join(missing)}")
+
     out = ROOT / "heatmap.html"
     tmp = out.with_suffix(".html.building")
     tmp.write_text('<!doctype html>\n<html lang="zh-CN">\n<head>\n'

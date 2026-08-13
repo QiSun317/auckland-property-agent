@@ -1485,7 +1485,14 @@ function scoreSuburb(s, c) {
       const d = density(s);
       add(d === null ? 0.5 : clamp01(1 - d / 4000), 1.0);
     }
-    if (w === 'coastal') add(/bay|beach|point|heads|coast|island/i.test(s.n) ? 1 : 0.15, 0.9);
+    if (w === 'coastal') {
+      // Was guessing from the name alone, which scored Mission Bay and missed
+      // Muriwai. The intro says it outright where there is one.
+      const about = s.w ? s.w.extract : '';
+      const named = /bay|beach|point|heads|coast|island/i.test(s.n);
+      const said = /beach|coast|harbour|harbor|shore|seaside|waterfront|gulf|bay/i.test(about);
+      add(said ? 1 : named ? 0.8 : 0.15, 0.9);
+    }
   }
   const prefScore = weight ? pref / weight : 0.5;
   const bs = c.budget ? budgetScore(a) : 0.6;
@@ -1777,7 +1784,7 @@ async function handle(text) {
         zones: c.zones.length ? c.zones : (out.criteria.zones || []),
         wants: [...new Set([...(c.wants || []), ...(out.criteria.wants || [])])],
       });
-      lead = (out.lead && claimsCheckOut(out.lead)) ? out.lead : null;
+      lead = (out.lead && claimsCheckOut(out.lead, null)) ? out.lead : null;
       picks = [];
       for (const p of out.picks) {
         const x = byName.get(p.name);
@@ -1788,7 +1795,7 @@ async function handle(text) {
         const r = scoreSuburb(x, { ...c, zones: [], suburbs: [], maxKm: null, wants: [] })
                   || { s: x, a: affordShare(x, c.budget), bs: 0, prefScore: 0, total: 0 };
         picks.push(r);
-        if (p.why && figuresCheckOut(p.why, factsFor(p.name)) && claimsCheckOut(p.why))
+        if (p.why && figuresCheckOut(p.why, factsFor(p.name)) && claimsCheckOut(p.why, p.name))
           modelWhy.set(p.name, p.why);
       }
       if (!picks.length) picks = null;
@@ -1869,7 +1876,7 @@ const MODEL_ON = !!DATA.proxy;
 const TABLE_FIELDS = ['name', 'zone', 'entry_price', 'median_cv', 'avg_value',
   'cbd_km', 'change_1y_pct', 'long_term_growth_pct', 'gross_yield_pct',
   'median_rent_wk', 'days_to_sell', 'sold_12m', 'population', 'renter_pct',
-  'own_section_pct', 'median_section_m2', 'bedroom_mix_1_to_5_pct'];
+  'own_section_pct', 'median_section_m2', 'bedroom_mix_1_to_5_pct', 'about'];
 
 function tableRow(x) {
   const r1 = v => v == null ? null : Math.round(v);
@@ -1879,7 +1886,11 @@ function tableRow(x) {
           x.i == null ? null : +x.i.toFixed(1),
           x.r || null, x.s || null, x.c || null, x.o || null, r1(x.rp),
           x.hs == null ? null : Math.round(x.hs * 100), x.la || null,
-          (x.bm || []).map(v => Math.round(v || 0)).join('/') || null];
+          (x.bm || []).map(v => Math.round(v || 0)).join('/') || null,
+          // The Wikipedia opening paragraph. Costs ~23k tokens across the whole
+          // table and buys the model an actual sense of place, instead of the
+          // page guessing "coastal" from whether the name contains "bay".
+          x.w ? x.w.extract : null];
 }
 const suburbTable = () => ({
   fields: TABLE_FIELDS,
@@ -1899,37 +1910,56 @@ function factsFor(name) {
 // numbers, which is where the first version leaked: "entry_price为790000" carries
 // no $ and no %, so a regex looking only for currency and percentages waved it
 // straight through.
+const SAYS_UP = /上涨|涨了|涨幅|增长|升值|增值|rose|risen|increase|gain|up by/i;
+const SAYS_DOWN = /下跌|跌了|跌幅|下降|回调|下调|减少|fell|fallen|decrease|decline|drop|down by/i;
+
 function figuresCheckOut(text, facts) {
   if (!facts) return false;
   const nums = Object.values(facts).filter(v => typeof v === 'number');
-  const near = (v, pool, tol) => pool.some(x => Math.abs(x - v) <= tol(x));
-  const moneyTol = x => Math.max(5000, x * 0.02);
-  const smallTol = () => 0.6;
+  const tolFor = v => (v >= 1000 ? Math.max(5000, v * 0.02) : 0.6);
 
-  // $1.2m / $790,000 / 790000 / 3.6% / 12.4 — all of it.
   for (const m of text.matchAll(/(\$\s?)?(\d[\d,]*(?:\.\d+)?)\s*([kKmM]\b|%|公里|km)?/g)) {
     const unit = m[3] || '';
     let v = parseFloat(m[2].replace(/,/g, ''));
     if (!isFinite(v)) continue;
     if (/[kK]/.test(unit)) v *= 1e3;
     if (/[mM]/.test(unit)) v *= 1e6;
-    if (unit === '%') { if (!near(v, nums, smallTol)) return false; continue; }
-    if (v >= 1900 && v <= 2100 && !m[1]) continue;      // a year, not a claim
-    if (v < 100 && !m[1]) continue;                     // bedroom counts, "3 房"
-    if (!near(v, nums, v >= 1000 ? moneyTol : smallTol)) return false;
+    if (unit !== '%' && v >= 1900 && v <= 2100 && !m[1]) continue;   // a year
+    if (unit !== '%' && v < 100 && !m[1]) continue;                  // "3 房", "12 个月"
+
+    if (nums.some(x => Math.abs(x - v) <= tolFor(x))) continue;      // signs agree
+
+    // "下跌了 2.3%" states -2.3 correctly: direction in words, magnitude as a
+    // positive number. Rejecting that threw away most of the model's reasoning.
+    // Accept the magnitude, but only when the words point the same way as the
+    // sign — saying a fall of 2.3% "rose" is the error worth catching.
+    const neg = nums.filter(x => x < 0).some(x => Math.abs(-x - v) <= tolFor(-x));
+    if (neg) {
+      const lead = text.slice(Math.max(0, m.index - 16), m.index);
+      if (SAYS_UP.test(lead) && !SAYS_DOWN.test(lead)) return false;
+      continue;
+    }
+    return false;
   }
   return true;
 }
 
-// The dataset has no school, crime, demographic or hazard data, and the page
-// says so. A model that then calls a suburb a "top school zone" from its own
-// training is contradicting that in the same breath — authoritative-sounding and
-// unverifiable, which is worse than a wrong number. Figures are checked
-// numerically; this checks the claims.
-const UNGROUNDED = /学区|学校|名校|私校|公立|校网|中学|小学|decile|school|治安|安全|犯罪|crime|safe|华人|亚裔|族裔|ethnic|chinese communit|洪水|水浸|滑坡|flood|landslide|地震|医院|hospital|富人区|高档|档次|口碑|声誉|prestig|reputab|affluent|desirable/i;
+// Two tiers. The hard list is what the page has told the reader it does not
+// have: a confident line about school zones or crime is the failure that
+// matters, and no encyclopaedia paragraph makes it sourced. The soft list is
+// character — "affluent", "sought after" — which the intro genuinely can
+// support, so it is allowed only when that suburb's own intro backs it.
+const HARD_BLOCK = /学区|学校|名校|私校|校网|中学|小学|decile|school|治安|安全|犯罪|crime|safe|华人|亚裔|族裔|ethnic|chinese communit|洪水|水浸|滑坡|flood|landslide|地震|earthquake/i;
+const SOFT_CLAIM = /富人区|高档|档次|口碑|声誉|富裕|上流|prestig|reputab|affluent|wealthy|desirable|sought.after|exclusive|upmarket/i;
+const SOFT_SOURCE = /affluent|wealthy|prosperous|expensive|exclusive|prestigious|sought|upmarket|renowned|famous|noted for|known for|leafy|desirable/i;
 
-function claimsCheckOut(text) {
-  return !UNGROUNDED.test(text);
+function claimsCheckOut(text, name) {
+  if (HARD_BLOCK.test(text)) return false;
+  if (SOFT_CLAIM.test(text)) {
+    const about = name && byName.get(name)?.w?.extract;
+    if (!about || !SOFT_SOURCE.test(about)) return false;
+  }
+  return true;
 }
 
 async function askModel(text) {

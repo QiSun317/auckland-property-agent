@@ -23,6 +23,7 @@ const MODEL = 'gemini-3.5-flash-lite';
 const MAX_CHARS = 400;
 const MAX_ROWS = 400;
 const MAX_CELL = 60;
+const MAX_TEXT_CELL = 700;   // the 'about' column carries a paragraph
 
 // This shortlists Auckland suburbs and declines everything else, so the endpoint
 // cannot be farmed as a free general-purpose chatbot.
@@ -69,9 +70,18 @@ Hard rules:
   elsewhere — schools, zoning, reputation, safety, who lives there, what the
   streets look like. Do not use any of it. If a claim cannot be read off the
   fields you were given, do not make it, even if you are confident it is true.
-  Especially: say nothing about school zones or school quality. The page tells
-  the reader plainly that it has no school data, and contradicting that two
-  lines later is worse than saying nothing.
+- The 'about' column is an encyclopaedia opening paragraph. Use it for
+  geography and setting — coast, bush, harbour, hills, town centre, how far out
+  it sits, what kind of place it is. If you characterise a suburb, the wording
+  must be supportable from its own 'about' text, not from what you recall.
+  A suburb with no 'about' text gets no characterisation at all.
+- Even with 'about' available, say NOTHING about school zones or school
+  quality, crime or safety, or the ethnic makeup of a suburb. Do not mention
+  them at all — not even to note that you lack the data. The page has already
+  told the reader that separately, in its own words. Repeating it inside your
+  reasoning wastes the sentence, and any claim there gets the whole explanation
+  discarded. Spend those words on what the data does show: price, section size,
+  bedroom mix, distance, how fast it trades, and the setting from 'about'.
 - Only ever name a suburb from the table. Never invent one.
 - Every number you write must appear in that suburb's data, unchanged. If you
   are unsure of a figure, describe it in words instead. The page verifies every
@@ -123,9 +133,10 @@ function cleanTable(body) {
   const rows = Array.isArray(body?.rows)
     ? body.rows.slice(0, MAX_ROWS)
         .filter(Array.isArray)
-        .map(r => r.slice(0, fields.length).map(v =>
+        .map(r => r.slice(0, fields.length).map((v, i) =>
           v === null || v === undefined ? null
-            : typeof v === 'number' ? v : String(v).slice(0, MAX_CELL)))
+            : typeof v === 'number' ? v
+            : String(v).slice(0, fields[i] === 'about' ? MAX_TEXT_CELL : MAX_CELL)))
         .filter(r => r[0])
     : [];
   return { fields, rows };
