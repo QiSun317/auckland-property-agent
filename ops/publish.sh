@@ -31,7 +31,13 @@ if git -C "$WORK" diff --quiet; then
 fi
 
 stamp="$(date +%Y-%m-%d)"
+# Most publishes are a data refresh and say so by default, but the site repo's
+# history is the only record of what the public page actually gained, and
+# "Refresh data" is a lie when the page grew a feature.
+#
+#   ./ops/publish.sh "Add the mortgage and rates calculator"
+msg="${1:-Refresh data} ($stamp)"
 git -C "$WORK" add index.html
-git -C "$WORK" commit -q -m "Refresh data ($stamp)"
+git -C "$WORK" commit -q -m "$msg"
 git -C "$WORK" push -q origin main
 echo "published $stamp -> https://${SITE_REPO%%/*}.github.io/${SITE_REPO##*/}/"
