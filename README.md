@@ -9,6 +9,7 @@ python3 scripts/fetch_prices.py      # 各 suburb 房价（217 个页面，约 1
 python3 scripts/fetch_boundaries.py  # LINZ suburb 边界
 python3 scripts/fetch_wikipedia.py   # 各 suburb 维基百科简介（限速，约 3 分钟）
 python3 scripts/fetch_valuations.py  # 62 万个地块的政府估价 CV（约 2 分钟，10 MB）
+python3 scripts/fetch_mortgage_rates.py  # 各银行挂牌房贷利率（1 秒）
 python3 scripts/build_detail.py      # 空间关联 + 按 35 米网格聚合
 python3 scripts/build_map.py         # 生成 heatmap.html + suburb_prices.csv
 python3 scripts/build_db.py          # 装进 DuckDB（约 20 秒）
@@ -21,8 +22,9 @@ python3 scripts/q.py --schema
 python3 scripts/q.py "SELECT name, avg_house_value FROM suburb_overview ORDER BY 2 DESC LIMIT 10"
 ```
 
-四个 `fetch_*` 只需在数据要更新时重跑；改样式只跑最后两个（`build_detail.py`
-在边界或估价变了才需要重跑）。
+`fetch_*` 只需在数据要更新时重跑（利率例外——它几天就变一次）；改样式只跑最后两个
+（`build_detail.py` 在边界或估价变了才需要重跑）。实际上不用一条条敲，
+`python3 scripts/pipeline.py run` 会按各自的节奏抓该抓的，再重建。
 
 需要 `duckdb`（`python3 -m pip install duckdb`）。注意**装到哪个解释器**上 ——
 这台机器上 `/opt/anaconda3/bin/python3` 有，`/usr/bin/python3` 没有，
@@ -34,10 +36,11 @@ python3 scripts/q.py "SELECT name, avg_house_value FROM suburb_overview ORDER BY
 
 | 文件 | 内容 |
 |---|---|
-| `heatmap.html` | 独立页面。全区图：发散色阶（蓝＝便宜／红＝贵）、悬停、搜索、数据表。**点任一郊区**进入详情：区内 35 米网格 CV 热力图 + 简介 + 市场指标 + 户型结构 + 房价走势 + CV 分布 |
+| `heatmap.html` | 独立页面。全区图：发散色阶（蓝＝便宜／红＝贵）、悬停、搜索、数据表。**点任一郊区**进入详情：区内 35 米网格 CV 热力图 + 简介 + 市场指标 + 户型结构 + 房价走势 + CV 分布 + 房贷/地税试算（按该区入门价填好） |
 | `data/suburb_detail.json` | 285 个郊区的网格化 CV（base64 打包）与分位数、直方图 |
 | `data/raw/valuations.jsonl.gz` | 623,765 个计税单元的 CV/LV（2021 与 2024 两次估价）+ 地块中心点 |
 | `data/raw/wikipedia.json` | 204 个郊区的维基百科简介 |
+| `data/raw/mortgage_rates.json` | 各银行挂牌房贷利率（72 行产品 + 五大行每档最低值） |
 | `data/suburb_prices.csv` | 286 行扁平表，供 agent 直接查询 |
 | `data/join_report.txt` | 边界与价格的匹配结果、无数据郊区清单 |
 | `data/raw/opes_suburbs.json` | 原始抓取记录，含 2000 年至今的年度价格序列 |
@@ -79,6 +82,14 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 - **简介**：英文维基百科 API，CC BY-SA 4.0。标题有歧义（Albany 是纽约州的城市），
   所以按 `{名}, Auckland` → `{名}, New Zealand` → `{名}` 依次尝试，并用条目坐标与
   suburb 中心点的距离（≤20 km）核验后才采纳。
+- **房贷利率**：[interest.co.nz 的房贷利率表](https://www.interest.co.nz/borrowing)，
+  全部银行 × 全部期限的挂牌利率。`robots.txt` 未禁止 `/borrowing`。
+  换掉了原先那个把利率写在句子里的来源——「the lowest 1 year fixed mortgage interest
+  rate is 4.65%」是一句话不是数据，改一次措辞，正则就会读出另一个数字而且不会报错。
+- **地税口径**：Auckland Council
+  [2026/2027 rating year](https://www.aucklandcouncil.govt.nz/en/property-rates-valuations/changes-rates-bills-this-year.html)。
+  议会公布的是平均账单而非税率表，所以 `COUNCIL` 常量里那四项是反推并锚定到
+  官方那个数上的，见「房贷与地税试算」一节。
 
 ## 自动化流水线
 
@@ -97,6 +108,7 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 | `boundaries` | 90 天 | LINZ 一年改几次 |
 | `localboards` | 365 天 | 议会 21 个 local board，只在行政区划调整时才变 |
 | `wikipedia` | 180 天 | 几乎不动 |
+| `mortgagerates` | 7 天 | 银行跟着批发利率走，几天就重新定价一次——月度任务每次跑都会重抓 |
 
 `pipeline.py run` 每次只抓到期的；`--force prices` 或 `--force all` 可以强制。
 
@@ -108,6 +120,7 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 | `valuations` | ≥590,000 个计税单元；≥95% 带 CV；均值漂移 ≤25% |
 | `boundaries` | 250–400 个多边形；每个都有 name 和 geometry |
 | `wikipedia` | ≥180 条非空简介 |
+| `mortgagerates` | 五大行每家都有行；6 个月/1/2/3/5 年都取得到；每档利率落在 2–15%；相对上一版每档移动 ≤1.5 个百分点 |
 
 实测这两条确实会拦下来：源站只返回 20 个 suburb → `only 19 suburbs have a price`；
 金额单位变了导致整体除以 3 → `median suburb value moved 66%, tolerance 30%`。
@@ -329,6 +342,134 @@ Key 存在浏览器 localStorage，**不写进 `heatmap.html`，也不进 git**�
 不过这终究是把密钥放在本机的一个静态页面里，安全性等同于你这台电脑；
 要更稳妥就在本地起一个小代理持有密钥，页面只调本地地址。
 
+## 房贷与地税试算
+
+主图下面一个折叠面板，点开某个郊区后详情页右栏也有一份 —— 同一个组件，同一份状态，
+改哪边另一边跟着变。回答的是「这套房子每月要还多少、每年要交多少地税」。
+
+### 房贷
+
+标准等额本息，按名义周期利率计息：
+
+```
+每期还款 = 本金 × i / (1 − (1+i)^(−n))       i = 年利率 / 每年期数
+```
+
+NZ 的银行实际是**按日计息**的，严格算比这个公式略高一点。这里仍然用公式值，
+因为读者会拿这个数去和银行自己的计算器对，而各行的计算器显示的正是公式值 ——
+在这个场景下，跟人家要对的那个数一致，比多算对那几毛钱更重要。
+
+还款频率支持每月／每两周／每周（NZ 习惯双周还），另有只还利息（investor 常用）。
+另外两个 NZ 特有的东西：
+
+- **利率 +2% 那一行**。这里的房贷是**定息 1–5 年后重新定价**，不是锁 30 年。
+  所以「现在还得起」和「续做时还得起」是两个问题，后者才是真会出事的那个。
+- **首付低于 20% 只提示、不算钱**。银行会加收低首付利率加点（约 0.25–1.5 个百分点），
+  但各行不同、还看具体情况。**编一个数字比说明白它存在更糟**，所以页面只说有这回事。
+
+### 利率是抓来的，不是写死的
+
+`fetch_mortgage_rates.py` 走和其余五个源完全一样的 fetch → validate → promote，
+每 7 天一档（月度任务每次跑都会重抓）。
+
+**为什么换掉原来那个源。** 第一版用的是 Opes 的利率页，那页把利率写在散文里：
+「the lowest 1 year fixed mortgage interest rate is 4.65%」。那是一句话，不是数据——
+改一次措辞，正则就会读出另一个数字，而且**不会报错**。interest.co.nz 把同一批数据
+发成带稳定表头的 HTML 表格，所以现在解析的是表格（`html.parser`，不是正则）。
+
+**口径写死在一处。** 抓下来的 `products` 是表里的原样（72 行，institution × product），
+`lowest` 是页面真正用的那个统计量，在 fetcher 里算好，因此定义只有一份：
+
+> ANZ / ASB / BNZ / Kiwibank / Westpac 五家，每个期限的最低挂牌利率。
+
+只取这五家，是因为报一个几乎没人拿得到的利率（ICBC 的 4.49%）比报一个略高但拿得到的更糟。
+页面上把银行名做成了利率按钮的 tooltip——「4.95%」和「4.95%（Kiwibank）」是两种不同的说法，
+前者会让人默认那是自己那家银行的利率。
+
+**「一行只报一个期限的不是房贷」。** 表里混着 `Good Energy - Up to $80K` 1.00%、
+`Better Homes Top Up` 1.00%、`Greater Choices` 0.00% 这类绿色贷款和 offset 账户。
+直接取最小值的话，全国最便宜的三年期房贷会变成 1.00%。
+按名字拉黑名单会随着改名失效，所以判据用的是**结构**：一个产品至少要报 3 个期限才算数——
+房贷是整行报价，绿色补贴只报一个期限。
+
+**闸门实测过。** 造了 7 组坏数据跑校验：
+
+| 场景 | 结果 |
+|---|---|
+| 文件没变 | 通过（72 行） |
+| 绿色贷款漏进来（3 年 = 1.00%） | 拦下：`3y rate of 1.0% is not a mortgage rate` |
+| Westpac 整块消失 | 拦下：`no rows for Westpac` |
+| 2 年期这一列没了 | 拦下：`no 2y rate for any main bank` |
+| 1 年期一次跳 +2.0 个点 | 拦下：`1y moved +2.00 points (4.95% to 6.95%), tolerance 1.5` |
+| 1 年期涨 1.0 个点（真实的一次加息） | **通过**——这是该放行的 |
+| 小数点错位 4.95 → 49.5 | 拦下 |
+| 单位变了，整体除以 100 | 拦下 |
+
+头两版闸门有两条是**假的**，测出来才发现：区间写成 `1.0 <= rate <= 15.0`，
+而绿色贷款恰好挂牌在 1.00%——**一个把自己要防的那个数包含在内的区间，不叫区间**，
+下限提到 2.0（NZ 历史最低挂牌 1 年期是 2021 年的 2.19%，还有余量）。
+另一条是漂移检查按 `RAW / path.name` 找基线文件，测试里文件名不同就**静悄悄跳过了检查**——
+一个不出声的闸门比没有闸门更糟，改成写死文件名。
+
+页面仍然在渲染时算这个日期距今多少天，**超过 60 天就自己在卡片上说「这个利率是 N 天前读的」**。
+利率过期不会报错，它只会安安静静地给出一个看起来完全正常的月供。
+
+抓来的文件**不进仓库**（`.gitignore`），和 `opes_suburbs.json` 一个道理：
+商业站点抓取所得不转发，而且几秒就能重新抓，隔天就过时了。
+
+### 地税
+
+Auckland Council 的账单是四段：
+
+```
+一般地税   = CV × 0.250%          （住宅城区；乡村差别税率 0.185%）
+环境目标税 = CV × 0.014%          （水质 + 自然环境 + 气候行动，都按 CV 计）
+UAGC       = $610                 （统一年度费，按计税单元固定）
+垃圾收运   = $389                 （基础 + 回收 + 垃圾 + 厨余，固定）
+```
+
+**麻烦在于议会公布的是平均账单，不是税率表。** 所以上面这四项是按它逐项公布的
+涨跌额反推的（例如水质目标税「涨 3.5%，合 $2.55」→ 基数约 $73），
+再整体钉死在它唯一说明确的那个数上：均价住宅 **CV $1,280,000 今年缴 $4,378**。
+本模型在这个 CV 上给出 **$4,378.00**。
+
+所以口径是：**锚点上是准确的，离开锚点是估算**。页面就是这么写的，
+并且把这四项和这次校准直接摊开在「地税是怎么算出来的」里 —— 一个自己说不清
+怎么来的数字，不该出现在别人要拿去做决定的页面上。
+
+固定费用那两项还解释了一件反直觉的事：**越便宜的房子，地税里固定费的占比越高**。
+$600k 的房子和 $2M 的房子，UAGC 和垃圾费是一模一样的 $999。
+
+### 两个最容易搞错的点，页面会主动说
+
+1. **地税按政府估价 CV 计，不按你的买价。** 买价比 CV 高出 15% 以上时，
+   卡片会直接说明这一点 —— CV 要等下一轮全区重估（约 2027 年）才动，
+   买贵了不会立刻涨地税。
+2. **水费和污水费是 Watercare 单独收的，不在 rates 里。** 见过的第三方计算器
+   把 ~$1,500 的水费混进「地税」，那会让人以为持有成本比实际高一半。
+
+### 种子值：入门价配的是入门价的 CV
+
+进入某个郊区时，试算器用该区数据自动填好。第一版填的是
+**买价 = 入门价（CV 25 分位）、CV = 区内 CV 中位数** —— 错的。
+入门价本身就是一个政府估价，是同一条分布上的 25 分位；
+一套入门级的房子对应的是入门级的 CV，不是全区中间那个。
+
+结果是 East Tāmaki 被填成「买价 $790,000、CV $1,250,000」，
+然后那条「买价高于 CV」的提示一本正经地解释起一个根本不存在的 $460k 差额。
+现在两者种同一个值，那条提示只在**读者自己改了买价**时才出现 —— 那才是它要说的情况。
+
+助手的推荐卡片上那行月供也犯过同一个错（房价用入门价、地税用中位 CV，
+把账单高估了三分之一），一起改了。
+
+### 和选房助手的联动
+
+- 每张推荐卡片下面多一行：`$770,000、首付 20%、4.65% 30 年 → 每月约 $3,176 ＋ 地税 $253`。
+  「买得起」和「月月供得起」是两个问题，后者才是真正卡住人的那个。
+- 问题里出现房贷/月供/利率/地税等词时，助手直接说明这行是按什么假设算的、去哪儿改，
+  **而不是让模型去算**。月供是页面自己会做的算术，没有任何理由交给一个没有数据源的模型 ——
+  它编出来的月供会被 `figuresCheckOut` 拦下（不在该区那行数据里），但那是兜底，不是设计。
+
 ## 数据库：DuckDB
 
 `data/auckland.duckdb`，59 MB，六张表一个视图：
@@ -459,6 +600,7 @@ ramp，红臂在 OKLCH 空间镜像每一档的明度与彩度，因此两侧感
 - [ ] 攒够几期 `market_snapshot` 后，在详情页加一条「我们自己观测到的」价格曲线
       （现在图上那条是数据源给的历史，不是我们采集的）
 - [x] ~~页面内嵌选房助手，预算优先 + 优缺点 + 自动打开对应热力图~~
+- [x] ~~房贷月供 + 地税估算，按郊区自动填好；利率走 fetch → validate → promote~~
 - [ ] 补上助手现在会明确拒答的维度：学区（Ministry of Education 校网边界）、
       洪水与滑坡风险（议会图层）、治安（NZ Police 统计）
 - [ ] 区内热力图加住宅口径过滤（用 Unitary Plan 分区图层剔除商业/工业地块）

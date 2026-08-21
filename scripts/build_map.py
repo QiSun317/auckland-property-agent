@@ -61,6 +61,66 @@ LAST_UPDATED = "2026-04-16"
 # suburbs, or that have no polygon in the LINZ layer.
 DROP_SUBURBS = {"Waiheke Island", "Kawau Island"}
 
+# --- mortgage rates ------------------------------------------------------------
+# Fetched, validated and promoted like every other source (fetch_mortgage_rates
+# .py), then read here. Carried with the date it was read: a repayment computed
+# off a rate that moved two months ago is wrong in the way that is hardest to
+# catch, because it still looks exactly like a repayment. The page prints this
+# date and says so once the rate is more than 60 days old.
+FIXED_TERMS = ["6m", "1y", "18m", "2y", "3y", "4y", "5y"]
+
+
+def mortgage_rates():
+    path = RAW / "mortgage_rates.json"
+    if not path.exists():
+        raise SystemExit(
+            f"{path} is missing.\n"
+            f"  fix:  python3 scripts/fetch_mortgage_rates.py\n"
+            f"  or:   python3 scripts/pipeline.py run --force mortgagerates")
+    d = json.loads(path.read_text())
+    low = d["lowest"]
+    return {
+        "asAt": d["as_at"],
+        "src": d["source"],
+        "basis": d["lowest_basis"],
+        "banks": d["main_banks"],
+        # [term, rate, who offers it] — the third element is only a tooltip, but
+        # "4.95% (Kiwibank)" is a different claim from "4.95%", and the second
+        # one invites the reader to assume it is their bank.
+        "terms": [[t, low[t]["rate"], low[t]["banks"]]
+                  for t in FIXED_TERMS if t in low],
+        "floating": low["floating"]["rate"] if "floating" in low else None,
+        "floatingBanks": low["floating"]["banks"] if "floating" in low else [],
+        # Where most people fix, and so where the calculator starts. Named
+        # rather than indexed: adding 18 months to the list once shifted what
+        # position 1 meant.
+        "default": low["1y"]["rate"],
+    }
+
+
+# --- Auckland Council rates, 2026/2027 -----------------------------------------
+# The council publishes the *average* bill and the year-on-year movement of each
+# component, but not the schedule of rates in the dollar, so the split below is
+# reconstructed from the pieces it does publish and pinned to the one figure it
+# states outright: the average-value residential property (CV $1.28m) pays
+# $4,378 this year. At that CV these components return $4,378.00, so the model
+# is exact at the anchor and an estimate everywhere else — which is what the
+# page calls it. The three environment targeted rates are value-based, so they
+# scale with CV; the UAGC and waste charges are fixed per rating unit.
+COUNCIL = {
+    "year": "2026/2027",
+    "general": 0.00250,     # residential urban, per $1 of capital value
+    "generalRural": 0.00185,
+    "env": 0.00014,         # water quality + natural environment + climate action
+    "uagc": 610.0,          # uniform annual general charge, per SUIP
+    "waste": 388.8,         # base service + recycling + refuse + food scraps
+    "avgCv": 1280000,       # council's stated average residential CV
+    "avgTotal": 4378,       # ...and the average bill on it, up 7.9%
+    "risePct": 7.9,
+    "src": "https://www.aucklandcouncil.govt.nz/en/property-rates-valuations/"
+           "changes-rates-bills-this-year.html",
+}
+
 
 # --- colour helpers (OKLab interpolation, done once, baked into a LUT) --------
 def _srgb_to_lin(c):
@@ -207,6 +267,10 @@ def main():
     wiki = json.loads((RAW / "wikipedia.json").read_text())
     detail = json.loads((DATA / "suburb_detail.json").read_text())
     dsub = detail["suburbs"]
+    # Loaded here with the rest of the raw inputs rather than where it is used,
+    # so a missing rates file stops the run before it has written a CSV and a
+    # join report that no longer match the page.
+    rates = mortgage_rates()
 
     # Geography and typical section size come from the database, where the
     # spatial joins already happened.
@@ -341,6 +405,7 @@ def main():
         # Set AKL_AGENT_PROXY to a deployed ops/worker URL to offer the model
         # without visitors needing their own key. Empty = the option is absent.
         "proxy": os.environ.get("AKL_AGENT_PROXY", ""),
+        "fin": {"m": rates, "c": COUNCIL},
         "valuationDate": detail["valuationDate"],
         "prevValuationDate": detail["prevValuationDate"],
         "unitsMatched": detail["unitsMatched"],
@@ -392,7 +457,9 @@ def main():
     # surfaces at runtime — check the names are all still there.
     required = ["figuresCheckOut", "claimsCheckOut", "HARD_BLOCK", "SOFT_SOURCE",
                 "smoothField", "fieldImage", "drawDetailMap", "enterDetail",
-                "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang"]
+                "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
+                "repayment", "councilRates", "calcCard", "renderCalcOut",
+                "seedCalc"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]
     if missing:

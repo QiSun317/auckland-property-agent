@@ -326,6 +326,84 @@
     #aiToggle { right:12px; bottom:12px; }
   }
 
+  /* ---- 房贷与地税试算 ---- */
+  .calcwrap { margin-top:16px; }
+  .calcwrap > summary {
+    cursor:pointer; font-size:13px; color:var(--ink-2); list-style:none;
+    display:flex; align-items:center; gap:8px; padding:9px 12px;
+    background:var(--surface); border:1px solid var(--ring); border-radius:8px;
+  }
+  .calcwrap > summary::-webkit-details-marker { display:none; }
+  .calcwrap > summary::before { content:"▸"; color:var(--muted); font-size:11px; }
+  .calcwrap[open] > summary::before { content:"▾"; }
+  .calcwrap > summary:hover { color:var(--ink); }
+  .calcwrap > summary b { color:var(--ink); font-weight:600; }
+  .calcwrap[open] > summary { border-radius:8px 8px 0 0; border-bottom:0; }
+  .calcwrap .card { border-radius:0 0 8px 8px; }
+
+  .calcin { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px 12px; }
+  .calcin label { display:block; font-size:11.5px; color:var(--muted); margin-bottom:3px; }
+  .calcin .fld { min-width:0; }
+  .calcin .fld.wide { grid-column:1 / -1; }
+  .calcin input[type=number], .calcin select {
+    font:inherit; font-size:13px; width:100%; padding:6px 9px;
+    border:1px solid var(--ring); border-radius:7px;
+    background:var(--plane); color:var(--ink); font-variant-numeric:tabular-nums;
+  }
+  .calcin input:focus, .calcin select:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .calcin .unit { position:relative; }
+  .calcin .unit input { padding-right:26px; }
+  .calcin .unit i {
+    position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    font-style:normal; font-size:12px; color:var(--muted); pointer-events:none;
+  }
+  .ratechips { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; grid-column:1 / -1; }
+  .ratechips button {
+    font:inherit; font-size:11px; padding:4px 8px; cursor:pointer;
+    border:1px solid var(--ring); border-radius:13px;
+    background:var(--surface); color:var(--ink-2);
+    font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .ratechips button:hover { color:var(--ink); border-color:var(--accent); }
+  .ratechips button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:transparent; }
+
+  .calcout { margin-top:13px; padding-top:12px; border-top:1px solid var(--hair); }
+  .calcbig { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+  .calcbig .v { font-size:27px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .calcbig .k { font-size:12px; color:var(--muted); }
+  .calcrows { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 18px;
+              font-size:12.5px; margin-top:10px; }
+  .calcrows div { display:flex; justify-content:space-between; gap:10px;
+                  border-bottom:1px solid var(--hair); padding-bottom:4px; }
+  .calcrows span:first-child { color:var(--muted); font-size:12px; }
+  .calcrows span:last-child { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .calcrows .full { grid-column:1 / -1; }
+
+  .calctot {
+    margin-top:11px; padding:9px 11px; border-radius:8px; background:var(--plane);
+    border:1px solid var(--ring); display:flex; align-items:baseline; gap:8px;
+    flex-wrap:wrap; font-variant-numeric:tabular-nums;
+  }
+  .calctot .v { font-size:18px; font-weight:650; }
+  .calctot .k { font-size:11.5px; color:var(--muted); }
+  .calctot .k b { color:var(--ink-2); font-weight:500; }
+
+  .calcflag { margin-top:9px; font-size:11.5px; line-height:1.6; color:#b3701c; }
+  .calcflag.bad { color:#d03b3b; }
+  .calcbreak { margin-top:10px; font-size:11.5px; }
+  .calcbreak summary { cursor:pointer; color:var(--muted); }
+  .calcbreak summary:hover { color:var(--ink-2); }
+  .calcbreak .calcrows { margin-top:8px; font-size:12px; }
+  .calcnote { margin:10px 0 0; font-size:11px; line-height:1.65; color:var(--muted); }
+  .calcnote a { color:var(--accent); }
+  .rec .cost { font-size:11px; color:var(--muted); margin:0 0 7px;
+               font-variant-numeric:tabular-nums; }
+  .rec .cost b { color:var(--ink-2); font-weight:600; }
+
+  @media (max-width:560px) {
+    .calcin, .calcrows { grid-template-columns:1fr; }
+  }
+
   .notes { margin-top:22px; font-size:12.5px; color:var(--ink-2); line-height:1.7; }
   .notes h2 { font-size:13px; margin:0 0 6px; color:var(--ink); font-weight:650; }
   .notes ul { margin:0; padding-left:18px; }
@@ -378,6 +456,11 @@
     <div class="lbar" id="lbar"><div class="cursor" id="lcursor"></div></div>
     <div class="ticks" id="lticks"></div>
   </div>
+
+  <details class="calcwrap" id="calcMain">
+    <summary id="calcSummary"></summary>
+    <div id="calcMainSlot"></div>
+  </details>
 
   <div id="detail" hidden>
     <div class="dbar">
@@ -504,6 +587,7 @@ function setLang(next) {
   applyLang();
   fillStats();          // the notes carry spans that applyLang just rebuilt
   tiles();
+  redrawCalc();
   paint();              // redraws the legend caption
   if (!$('#tableWrap').hidden) drawTable();
   if (D) { drawDetailLegend(); sidePanel(D.s); enterDetailChrome(D.s); }
@@ -1220,6 +1304,15 @@ function sidePanel(s) {
   ].join('');
   if (stats) out.push(`<div class="card"><h3>${L('市场概况', 'Market')}</h3><div class="dstats">${stats}</div></div>`);
 
+  // Seeded from this suburb's entry price; anything the reader has already
+  // typed wins over the seed. Skipped where there is nothing to seed from —
+  // a water catchment with no rating units and no price gets the "there is
+  // nothing here" note below instead, which pushing a card would suppress.
+  if (dt || s.p) {
+    seedCalc(s);
+    out.push(calcCard());
+  }
+
   if (s.bm) {
     const labels = LANG === 'zh' ? ['1 房', '2 房', '3 房', '4 房', '5+ 房']
                                   : ['1 bed', '2 bed', '3 bed', '4 bed', '5+ bed'];
@@ -1237,6 +1330,7 @@ function sidePanel(s) {
   if (!out.length) out.push(`<div class="card"><p class="dintro">${L('该地区没有任何计税单元与市场数据 —— 通常是集水区、林地或保护区。', 'No rating units and no market data here — usually a water catchment, forest or reserve.')}</p></div>`);
 
   $('#dSide').innerHTML = out.join('');
+  renderCalcAll();
 }
 
 function drawDetailLegend() {
@@ -1254,7 +1348,7 @@ function drawDetailLegend() {
 }
 
 /* ---------- enter / leave ---------- */
-const HIDE = ['#tiles', '.bar', '.stage', '.legend', '#tableWrap'];
+const HIDE = ['#tiles', '.bar', '.stage', '.legend', '#calcMain', '#tableWrap'];
 
 function enterDetail(name, push = true) {
   const s = byName.get(name);
@@ -1326,6 +1420,253 @@ svg.addEventListener('pointerup', e => {
   if (name) enterDetail(name);
 });
 
+
+/* ==========================================================================
+   房贷与地税试算
+   Two sums that share one question: what does holding this place cost. The
+   mortgage half is ordinary amortisation; the rates half is a model of the
+   council's own bill. Both print the date their inputs were read — a
+   repayment computed off a rate that moved in June still looks exactly like
+   a repayment, which is why the stale case has to announce itself.
+   ========================================================================== */
+const FIN = DATA.fin;
+
+// State lives outside the DOM. sidePanel() is re-rendered on a language switch
+// and again on a theme change, and losing half-typed numbers to a colour
+// change is the sort of thing that makes a tool feel broken. `touched` stops a
+// suburb's seed values from overwriting figures someone entered by hand.
+const CALC = {
+  price: null, cv: null, dep: 20, years: 30, rate: FIN.m.default,
+  freq: 12, io: false, rural: false, touched: { price: false, cv: false },
+};
+
+const PER_L = { 12: ['每月', 'a month'], 26: ['每两周', 'a fortnight'], 52: ['每周', 'a week'] };
+const perL = f => L(PER_L[f][0], PER_L[f][1]);
+// Always two decimals: a rate typed as 6 is the same rate as 6.00, but "6%"
+// next to "4.65%" reads like a different kind of number.
+const pctL = v => (Number.isFinite(v) ? v : 0).toFixed(2) + '%';
+
+/* Ordinary table mortgage. NZ banks accrue interest daily but quote the
+   repayment off the nominal periodic rate, which is what every bank's own
+   calculator shows — matching that matters more here than being marginally
+   more correct than the number people will check this against. */
+function repayment(principal, annualPct, years, periods, interestOnly) {
+  const i = annualPct / 100 / periods;
+  const n = Math.round(years * periods);
+  if (!(principal > 0) || n <= 0 || !Number.isFinite(i)) return 0;
+  if (interestOnly) return principal * i;
+  if (i === 0) return principal / n;
+  return principal * i / (1 - Math.pow(1 + i, -n));
+}
+
+/* The council's bill, component by component. General and the three
+   environment targeted rates are charged on capital value; the UAGC and the
+   waste charges are fixed per rating unit, which is why a cheap house pays a
+   much larger share of its rates as flat fees. */
+function councilRates(cv, rural) {
+  const c = FIN.c, v = Math.max(0, cv || 0);
+  const general = v * (rural ? c.generalRural : c.general);
+  const env = v * c.env;
+  return { general, env, uagc: c.uagc, waste: c.waste,
+           total: general + env + c.uagc + c.waste };
+}
+
+const rateAgeDays = () => Math.floor(
+  (Date.now() - Date.parse(FIN.m.asAt + 'T00:00:00Z')) / 86400000);
+
+// A suburb seeds the calculator from its own numbers: the entry price (the
+// 25th percentile) rather than the average, for the same reason the
+// recommendation cards lead with it.
+//
+// CV seeds to the same figure rather than to the suburb's median CV, and the
+// distinction matters. Entry price *is* a council valuation — the 25th
+// percentile of the same distribution the median comes from — so an entry
+// level house has an entry level CV, not the suburb's middle one. Seeding the
+// median against the entry price paired two different houses and then made
+// the rates note explain the gap as if the reader had overpaid by $460k.
+// The gap the note is for is the real one: a purchase price above or below
+// the council's valuation of that same house.
+function seedCalc(s) {
+  const dt = s && s.dt;
+  if (!CALC.touched.price) CALC.price = (dt && dt.q[1]) || (s && s.p) || MID;
+  if (!CALC.touched.cv) CALC.cv = CALC.price;
+}
+
+function calcCard() {
+  const m = FIN.m;
+  const termL = { '6m': ['6 个月', '6 months'], '1y': ['1 年', '1 year'],
+                  '18m': ['18 个月', '18 months'],
+                  '2y': ['2 年', '2 years'], '3y': ['3 年', '3 years'],
+                  '4y': ['4 年', '4 years'], '5y': ['5 年', '5 years'] };
+  const chip = (lab, v, banks) => `<button type="button" data-rate="${v}" aria-pressed="${
+    Math.abs(CALC.rate - v) < 1e-9}" title="${L(`${(banks || []).join('、')} 的挂牌利率`,
+      `carded by ${(banks || []).join(', ')}`)}">${lab} · ${v.toFixed(2)}%</button>`;
+  const opt = (v, cur, lab) => `<option value="${v}"${v === cur ? ' selected' : ''}>${lab}</option>`;
+  return `<div class="card calc">
+    <h3>${L('房贷与地税试算', 'Mortgage and council rates')}</h3>
+    <div class="calcin">
+      <div class="fld"><label>${L('买价（NZD）', 'Purchase price (NZD)')}</label>
+        <input type="number" data-cf="price" min="0" step="10000" value="${Math.round(CALC.price)}"></div>
+      <div class="fld"><label>${L('首付比例', 'Deposit')}</label>
+        <div class="unit"><input type="number" data-cf="dep" min="0" max="100" step="1" value="${CALC.dep}"><i>%</i></div></div>
+      <div class="fld"><label>${L('贷款年限', 'Loan term')}</label>
+        <div class="unit"><input type="number" data-cf="years" min="1" max="40" step="1" value="${CALC.years}"><i>${L('年', 'yr')}</i></div></div>
+      <div class="fld"><label>${L('年利率', 'Interest rate')}</label>
+        <div class="unit"><input type="number" data-cf="rate" min="0" max="20" step="0.01" value="${CALC.rate}"><i>%</i></div></div>
+      <div class="ratechips">
+        ${m.terms.map(([t, v, banks]) => chip(L(termL[t][0], termL[t][1]), v, banks)).join('')}
+        ${m.floating ? chip(L('浮动', 'Floating'), m.floating, m.floatingBanks) : ''}
+      </div>
+      <div class="fld"><label>${L('还款频率', 'Repayment frequency')}</label>
+        <select data-cf="freq">${[12, 26, 52].map(f =>
+          opt(String(f), String(CALC.freq), L(PER_L[f][0], { 12: 'Monthly', 26: 'Fortnightly', 52: 'Weekly' }[f]))).join('')}</select></div>
+      <div class="fld"><label>${L('还款方式', 'Repayment type')}</label>
+        <select data-cf="mode">${opt('pi', CALC.io ? 'io' : 'pi', L('本息同还', 'Principal and interest'))}${
+          opt('io', CALC.io ? 'io' : 'pi', L('只还利息', 'Interest only'))}</select></div>
+      <div class="fld"><label>${L('政府估价 CV（算地税用）', 'Council CV (rates are charged on this)')}</label>
+        <input type="number" data-cf="cv" min="0" step="10000" value="${Math.round(CALC.cv)}"></div>
+      <div class="fld"><label>${L('地税差别税率', 'Rating differential')}</label>
+        <select data-cf="diff">${opt('urban', CALC.rural ? 'rural' : 'urban', L('住宅 · 城区', 'Residential urban'))}${
+          opt('rural', CALC.rural ? 'rural' : 'urban', L('住宅 · 乡村', 'Residential rural'))}</select></div>
+    </div>
+    <div class="calcout"></div>
+  </div>`;
+}
+
+function renderCalcOut() {
+  const price = Math.max(0, CALC.price || 0);
+  const dep = Math.min(100, Math.max(0, CALC.dep || 0));
+  const deposit = price * dep / 100;
+  const loan = Math.max(0, price - deposit);
+  const f = CALC.freq;
+  const pay = repayment(loan, CALC.rate, CALC.years, f, CALC.io);
+  const n = Math.round(CALC.years * f);
+  const paid = CALC.io ? pay * n + loan : pay * n;
+  const stress = repayment(loan, (CALC.rate || 0) + 2, CALC.years, f, CALC.io);
+  const r = councilRates(CALC.cv, CALC.rural);
+  const perYear = pay * f, ratesPer = r.total / f;
+
+  const row = (k, v, cls = '') => `<div class="${cls}"><span>${k}</span><span>${v}</span></div>`;
+  const c = FIN.c;
+  const anchor = councilRates(c.avgCv, false);
+
+  const flags = [];
+  if (dep < 20 && price > 0) flags.push(`<div class="calcflag">${L(
+    `首付 ${dep}%（贷款价值比 ${((loan / price) * 100).toFixed(0)}%）。低于 20% 时多数银行要额外的低首付利率加点，通常 0.25–1.5 个百分点，这里没有算进去 —— 加点多少各行不同，编一个数字不如说明白它存在。`,
+    `A ${dep}% deposit is an LVR of ${((loan / price) * 100).toFixed(0)}%. Under 20%, most banks add a low-equity margin — usually 0.25–1.5 percentage points — which is not included above, because the size of it varies by bank and inventing a figure would be worse than naming the gap.`)}</div>`);
+  const age = rateAgeDays();
+  if (age > 60) flags.push(`<div class="calcflag bad">${L(
+    `利率是 ${FIN.m.asAt} 读取的，距今 ${age} 天。请自行核对当前挂牌利率再用这个数字。`,
+    `These rates were read on ${FIN.m.asAt}, ${age} days ago. Check the current carded rates before relying on this figure.`)}</div>`);
+  if (CALC.cv > 0 && price > 0 && Math.abs(CALC.cv - price) / price > 0.15)
+    flags.push(`<div class="calcflag">${L(
+      `地税是按政府估价 CV ${fmt(CALC.cv)} 算的，不是买价 ${fmt(price)}。买贵了不会立刻涨地税 —— CV 要等下一轮全区重估（约 2027 年）才会变。`,
+      `Rates are charged on the council valuation of ${fmt(CALC.cv)}, not the ${fmt(price)} you pay. Paying above CV does not raise your rates bill — the CV only moves at the next region-wide revaluation, due around 2027.`)}</div>`);
+
+  return `
+    <div class="calcbig">
+      <span class="v">${fmt(pay)}</span>
+      <span class="k">${L(`${perL(f)}还款${CALC.io ? '（只还利息）' : ''}`,
+                          `${perL(f)}${CALC.io ? ' · interest only' : ''}`)} ·
+        ${pctL(CALC.rate)} · ${CALC.years}${L(' 年', 'yr')}</span>
+    </div>
+    <div class="calcrows">
+      ${row(L('首付', 'Deposit'), fmt(deposit))}
+      ${row(L('贷款额', 'Loan'), fmt(loan))}
+      ${row(L('利率 +2% 时', 'If the rate rose 2%'), `${fmt(stress)} (+${fmt(stress - pay)})`)}
+      ${row(L(CALC.io ? '每年利息' : '每年还款', CALC.io ? 'Interest per year' : 'Repayments per year'), fmt(perYear))}
+      ${row(L(CALC.io ? '期末仍欠本金' : '利息总额', CALC.io ? 'Principal still owing at the end' : 'Total interest'),
+            fmt(CALC.io ? loan : paid - loan))}
+      ${row(L('还款总额', 'Total paid'), fmt(paid))}
+      ${row(L(`地税估算（${FIN.c.year}）`, `Council rates (${FIN.c.year})`), `${fmt(r.total)}${L('/年', '/yr')}`, 'full')}
+    </div>
+    <div class="calctot">
+      <span class="v">${fmt(pay + ratesPer)}</span>
+      <span class="k">${L(`${perL(f)}持有成本 = 房贷 <b>${fmt(pay)}</b> ＋ 地税 <b>${fmt(ratesPer)}</b>`,
+                          `${perL(f)} to hold = mortgage <b>${fmt(pay)}</b> + rates <b>${fmt(ratesPer)}</b>`)}</span>
+    </div>
+    ${flags.join('')}
+    <details class="calcbreak"><summary>${L('地税是怎么算出来的', 'How the rates figure is built')}</summary>
+      <div class="calcrows">
+        ${row(L(`一般地税 · CV × ${(c.general * 100).toFixed(3)}%`, `General rate · CV × ${(c.general * 100).toFixed(3)}%`), fmt(r.general))}
+        ${row(L(`环境类目标税 · CV × ${(c.env * 100).toFixed(3)}%`, `Environment targeted rates · CV × ${(c.env * 100).toFixed(3)}%`), fmt(r.env))}
+        ${row(L('统一年度费 UAGC（固定）', 'Uniform annual general charge (fixed)'), fmt(r.uagc))}
+        ${row(L('垃圾收运（固定）', 'Waste collection (fixed)'), fmt(r.waste))}
+        ${row(L('合计', 'Total'), fmt(r.total), 'full')}
+      </div>
+      <p class="calcnote">${L(
+        `议会公布的是平均账单，不是税率明细，所以上面这四项是按它逐项公布的涨跌反推、再钉在它唯一说死的那个数上：均价住宅 CV ${fmt(c.avgCv)} 今年缴 ${fmt(c.avgTotal)}。本模型在这个 CV 上给 ${fmt(anchor.total)} —— 锚点上是准的，离开锚点是估算。环境类三项（水质、自然环境、气候行动）按 CV 计所以随房价缩放；UAGC 和垃圾费是固定的，所以越便宜的房子，地税里固定费用占比越高。`,
+        `The council publishes the average bill rather than the schedule of rates, so these four lines are reconstructed from the year-on-year movements it does publish and pinned to the one total it states outright: the average residential property at CV ${fmt(c.avgCv)} pays ${fmt(c.avgTotal)} this year. This model returns ${fmt(anchor.total)} at that CV — exact at the anchor, an estimate away from it. The three environment rates are charged on CV and so scale with it; the UAGC and waste charges are flat, which is why a cheaper house pays a larger share of its rates as fixed fees.`)}</p>
+    </details>
+    <p class="calcnote">${L(
+      `估算，不是报价，也不构成任何理财建议。利率是 ${FIN.m.banks.join(' / ')} 五大行挂牌利率中<b>每个期限的最低值</b>（${FIN.m.asAt} 读取，<a href="${FIN.m.src}" target="_blank" rel="noopener">来源 ↗</a>），把鼠标放在利率按钮上能看到是哪家给的。<b>这不是你能拿到的利率</b> —— 实际利率取决于银行、首付比例和收入，低于 20% 首付通常拿不到挂牌的特惠价。<b>水费和污水费由 Watercare 另行收取</b>，不在地税里，也不在上面这个数里；保险、维护、body corp 同样没算。以自己的房子为准请查<a href="https://www.aucklandcouncil.govt.nz/property-rates-valuations" target="_blank" rel="noopener">议会的地税查询 ↗</a>。`,
+      `An estimate, not a quote, and not financial advice. The rates offered are the <b>lowest carded rate at each term</b> across ${FIN.m.banks.join(', ')} (read ${FIN.m.asAt}, <a href="${FIN.m.src}" target="_blank" rel="noopener">source ↗</a>); hover a rate button to see which bank is quoting it. <b>This is not the rate you will be offered</b> — that depends on the bank, your deposit and your income, and a deposit under 20% usually does not qualify for the carded special at all. <b>Water and wastewater are billed separately by Watercare</b> — they are not part of council rates and are not in the figure above, and neither are insurance, maintenance or body corporate levies. For a specific property, look it up on <a href="https://www.aucklandcouncil.govt.nz/property-rates-valuations" target="_blank" rel="noopener">the council's own rates search ↗</a>.`)}</p>`;
+}
+
+function renderCalcAll() {
+  document.querySelectorAll('.calcout').forEach(el => { el.innerHTML = renderCalcOut(); });
+  const sum = $('#calcSummary');
+  if (sum) {
+    const r = councilRates(CALC.cv, CALC.rural);
+    const pay = repayment(Math.max(0, (CALC.price || 0) * (1 - CALC.dep / 100)),
+                          CALC.rate, CALC.years, CALC.freq, CALC.io);
+    sum.innerHTML = L(
+      `<b>房贷与地税试算</b> — ${fmt(CALC.price)} 的房子，首付 ${CALC.dep}%、${pctL(CALC.rate)}，${perL(CALC.freq)}还 <b>${fmt(pay)}</b>，地税约 ${fmt(r.total)}/年`,
+      `<b>Mortgage and rates</b> — a ${fmt(CALC.price)} home at ${CALC.dep}% down and ${pctL(CALC.rate)} costs <b>${fmt(pay)}</b> ${perL(CALC.freq)}, plus about ${fmt(r.total)}/yr in rates`);
+  }
+}
+
+// Inputs are rendered once and left alone; only the output half redraws on
+// every keystroke, so the caret never jumps out of the field being typed in.
+function setCalc(k, raw) {
+  const num = v => (Number.isFinite(v) ? v : 0);
+  if (k === 'price') {
+    CALC.price = num(raw); CALC.touched.price = true;
+    if (!CALC.touched.cv) syncField('cv', Math.round(CALC.cv = CALC.price));
+  } else if (k === 'cv') { CALC.cv = num(raw); CALC.touched.cv = true; }
+  else if (k === 'freq') CALC.freq = +raw;
+  else if (k === 'mode') CALC.io = raw === 'io';
+  else if (k === 'diff') CALC.rural = raw === 'rural';
+  else CALC[k] = num(raw);
+  renderCalcAll();
+}
+
+// The page can hold two copies of the card (the region one and the suburb
+// one), so a value set in either has to land in both.
+function syncField(k, v) {
+  document.querySelectorAll(`[data-cf="${k}"]`).forEach(el => {
+    if (el !== document.activeElement) el.value = v;
+  });
+}
+
+const calcHandler = e => {
+  const f = e.target.closest('[data-cf]');
+  if (f) setCalc(f.dataset.cf, f.tagName === 'SELECT' ? f.value : parseFloat(f.value));
+};
+document.addEventListener('input', calcHandler);
+document.addEventListener('change', calcHandler);
+document.addEventListener('click', e => {
+  const b = e.target.closest('.ratechips button');
+  if (!b) return;
+  CALC.rate = parseFloat(b.dataset.rate);
+  document.querySelectorAll('[data-cf="rate"]').forEach(el => { el.value = CALC.rate; });
+  document.querySelectorAll('.ratechips button').forEach(x =>
+    x.setAttribute('aria-pressed', String(x.dataset.rate === b.dataset.rate)));
+  renderCalcAll();
+});
+
+// Redraw the region copy of the card. Called on boot and on a language
+// switch; it deliberately does not re-seed, so switching language mid-sum
+// keeps the numbers on screen.
+function redrawCalc() {
+  $('#calcMainSlot').innerHTML = calcCard();
+  renderCalcAll();
+}
+
+function mountCalc() {
+  seedCalc(null);
+  redrawCalc();
+}
 
 /* ==========================================================================
    选房助手
@@ -1435,6 +1776,9 @@ function parseRequest(text) {
   for (const [key, words] of Object.entries(UNSUPPORTED))
     if (words.some(x => t.includes(x))) c.missing.push(key);
   c.wants = [...new Set(c.wants)];
+  // Financing is not a filter — it does not change which suburbs fit. It only
+  // changes what gets said afterwards, so the model never has to touch it.
+  c.finance = /房贷|按揭|月供|还款|贷款|首付|利率|地税|市政费|mortgage|repayment|instal|deposit|interest rate|council rates/i.test(text);
   return c;
 }
 
@@ -1709,6 +2053,21 @@ function say(html, cls = 'msg-ai') {
   return d;
 }
 
+// "Can I buy here" and "can I carry it every month" are different questions,
+// and the second is the one that actually stops people. Quoted at the entry
+// price, on whatever assumptions the calculator currently holds, so the two
+// features never disagree on screen.
+function costLine(s) {
+  const price = s.dt.q[1];
+  const pay = repayment(price * (1 - CALC.dep / 100), CALC.rate, CALC.years, 12, false);
+  // Rates on the same house, not on the suburb's middle one: entry price is a
+  // council valuation itself, so an entry level home is rated on an entry
+  // level CV. Quoting the median here overstated the bill by a third.
+  const rates = councilRates(price, false).total / 12;
+  return L(`${fmt(price)}、首付 ${CALC.dep}%、${pctL(CALC.rate)} ${CALC.years} 年 → 每月约 <b>${fmt(pay)}</b> ＋ 地税 ${fmt(rates)}`,
+           `${fmt(price)} at ${CALC.dep}% down, ${pctL(CALC.rate)} over ${CALC.years}yr → about <b>${fmt(pay)}</b>/month plus ${fmt(rates)} rates`);
+}
+
 function renderRec(r, c, rank, why) {
   const s = r.s, pc = prosCons(r, c);
   const el = document.createElement('div');
@@ -1721,6 +2080,7 @@ function renderRec(r, c, rank, why) {
       ${L('中位', 'median')} ${fmt(s.dt.med)}</div>
     <div class="price2">${L(`区内 25% 的房子在 ${fmt(s.dt.q[1])} 以下 · 平均估值 ${fmt(s.p)}`,
                             `a quarter of homes here are under ${fmt(s.dt.q[1])} · average value ${fmt(s.p)}`)}</div>
+    <div class="cost">${costLine(s)}</div>
     ${r.a === null ? '' : `<div class="fitbar"><i style="width:${(r.a * 100).toFixed(0)}%"></i></div>
       <div class="fitcap">${L(`预算内可选 ${(r.a * 100).toFixed(0)}% 的房子`, `${(r.a * 100).toFixed(0)}% of homes fit the budget`)}</div>`}
     ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
@@ -1806,6 +2166,14 @@ async function handle(text) {
   }
 
   say(L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`));
+  // Repayments are arithmetic the page does itself, so answer it here rather
+  // than letting the model near a number it has no source for.
+  if (c.finance)
+    say(L(`每张卡片下面那行就是按<b>首付 ${CALC.dep}%、${pctL(CALC.rate)}、${CALC.years} 年</b>算的月供加地税。` +
+          `想换首付比例、利率或年限，用页面上的「房贷与地税试算」，卡片会跟着变。`,
+          `The line under each card is the monthly repayment plus rates at <b>${CALC.dep}% down, ` +
+          `${pctL(CALC.rate)} over ${CALC.years} years</b>. Change the deposit, rate or term in ` +
+          `"Mortgage and council rates" on the page and the cards follow.`));
   if (c.missing.length)
     say(`<span class="warn">${missingLabels(c.missing)}</span>` +
         L('，所以下面的推荐<b>没有</b>把它纳入考虑，我也不会替你猜。',
@@ -2020,6 +2388,8 @@ function notesHtml() {
       <li><b>区内热力图：</b>点开某个郊区后看到的是<b>政府估价 CV</b>（Auckland Council 2024-05-01 估值，用于计算 rates），来自议会公开的逐地块估价图层，全区 <span id="nUnits"></span> 个计税单元落入郊区边界。每格约 35 米，取格内 CV 中位数；道路、绿地等格内无地块时，若周围有 3 个及以上相邻格有值，则用邻格中位数补齐，其余留空。色阶中点是<b>该郊区自身的</b> CV 中位数，所以每个区都用满整条色带，不同区之间的颜色不可横向比较。</li>
       <li><b>CV 的口径：</b>政府估价不是成交价，且包含全部计税单元——公寓单元、商铺、工业地都在内。所以公寓密集处会出现成片低值（那是"一套公寓多少钱"，不是"一栋房子多少钱"），Penrose 这类工业区的 CV 中位数也会明显高于住宅口径。</li>
       <li><b>郊区简介：</b>英文维基百科（CC BY-SA 4.0），按坐标距离核对后匹配，205 个郊区中 204 个有条目。<b>简介只有英文</b>，因为中文维基几乎没有奥克兰郊区条目。</li>
+      <li><b>房贷试算：</b>标准等额本息公式，按名义周期利率计息（NZ 各行自己的计算器也是这么显示的）。利率取<b>各行当日最低挂牌利率</b>（<span id="rateAsAt"></span> 读取，来源 Opes Partners），<b>不是你能拿到的利率</b>——实际利率取决于银行、首付比例和收入。首付低于 20% 时银行通常加收低首付利率加点（约 0.25–1.5 个百分点），各行不同，页面只提示存在、不替它编一个数。</li>
+      <li><b>地税估算：</b>Auckland Council <span id="rateYear"></span> 年度。议会公布的是<b>平均账单</b>而不是税率明细，所以页面上那四项是按它逐项公布的涨跌反推，并钉死在它唯一说明确的数上：均价住宅 CV <span id="rateAvgCv"></span> 今年缴 <span id="rateAvgTotal"></span>。<b>锚点上是准确的，离开锚点是估算。</b>另外两点常被搞混：地税按<b>政府估价 CV</b> 计，不按你的买价，买贵了不会立刻涨；<b>水费和污水费由 Watercare 单独收取</b>，不在地税里。以自己的房子为准请查议会的地税查询。</li>
       <li><b>覆盖范围：</b>共 <span id="nTotal"></span> 个郊区/地区，其中 <span id="nPriced"></span> 个有价格数据。斜纹区块无价格数据，多为农村、林地、机场、医院等，但也包含少数住宅区（如 Western Springs、Westgate、Hillpark、Wairau Valley）——价格源未收录。大堡岛（Aotea / Great Barrier）等外海岛屿不在 LINZ 郊区图层内，故未绘制。</li>
     </ul>
     <p style="margin:14px 0 0; color:var(--muted)">数据来源：LINZ（CC BY 4.0）· Auckland Council 公开估价图层 · Opes Partners · English Wikipedia（CC BY-SA 4.0）。页面为静态生成，无追踪、无 cookie、无后端。</p>
@@ -2054,6 +2424,21 @@ function notesHtml() {
       <li><b>Suburb intros:</b> English Wikipedia (CC BY-SA 4.0), matched by checking the article's coordinates
         against the suburb centroid; 204 of 205 suburbs have one. <b>Intros are English only</b> — Chinese
         Wikipedia has almost no articles on Auckland suburbs.</li>
+      <li><b>Mortgage figures:</b> a standard table loan on the nominal periodic rate, which is how
+        every NZ bank's own calculator quotes it. The rates offered are the <b>lowest carded rate</b>
+        across the main banks (read <span id="rateAsAt"></span>, from Opes Partners) — <b>not the rate
+        you will be offered</b>, which depends on the bank, your deposit and your income. Under a 20%
+        deposit most banks add a low-equity margin of roughly 0.25–1.5 percentage points; it varies by
+        bank, so the page names the gap rather than inventing a number for it.</li>
+      <li><b>Council rates:</b> Auckland Council, <span id="rateYear"></span>. The council publishes the
+        <b>average bill</b> rather than the schedule of rates, so the four components shown are
+        reconstructed from the year-on-year movements it does publish, pinned to the one total it states
+        outright: the average residential property at CV <span id="rateAvgCv"></span> pays
+        <span id="rateAvgTotal"></span> this year. <b>Exact at that anchor, an estimate away from it.</b>
+        Two things people commonly have backwards: rates are charged on the <b>council valuation</b>, not
+        on what you paid, so paying above CV does not raise the bill; and <b>water and wastewater are
+        billed separately by Watercare</b>, not included in rates. For a specific property, use the
+        council's own rates search.</li>
       <li><b>Coverage:</b> <span id="nTotal"></span> suburbs and localities, <span id="nPriced"></span> of them with price
         data. Hatched areas have none: mostly rural land, forest, the airport and hospitals, but also a few
         genuinely residential suburbs (Western Springs, Westgate, Hillpark, Wairau Valley) that the price source
@@ -2085,6 +2470,10 @@ function fillStats() {
   set('#nUnits', DATA.unitsMatched.toLocaleString('en-NZ'));
   set('#nTotal', all.length);
   set('#nPriced', priced.length);
+  set('#rateAsAt', DATA.fin.m.asAt);
+  set('#rateYear', DATA.fin.c.year);
+  set('#rateAvgCv', fmt(DATA.fin.c.avgCv));
+  set('#rateAvgTotal', fmt(DATA.fin.c.avgTotal));
 }
 
 function enterDetailChrome(s) {
@@ -2115,6 +2504,7 @@ $('#smOff').addEventListener('click', () => setSmooth(false));
 applyLang();
 fillStats();
 tiles();
+mountCalc();
 paint();
 applyVB();
 setView(URBAN);

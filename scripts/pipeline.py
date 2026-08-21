@@ -106,6 +106,47 @@ def check_localboards(path, prev):
     return n
 
 
+def check_mortgage_rates(path, prev):
+    """Rates are the one source whose drift has to be measured in percentage
+    points, not percent: 30% of 4.95 is 1.5pp, which is a year of tightening in
+    one step, while 30% of 0.5 would wave through a decimal-point error. The
+    baseline is the live file rather than the database, because this source is
+    not stored there — it is small, it is read straight off data/raw at build
+    time, and one file is a better comparison than none.
+    """
+    d = json.loads(path.read_text())
+    low = d.get("lowest") or {}
+    banks = {p["institution"] for p in d.get("products", [])}
+    missing = [b for b in d.get("main_banks", []) if b not in banks]
+    if missing:
+        raise Reject(f"no rows for {', '.join(missing)}")
+    for term in ("6m", "1y", "2y", "3y", "5y"):
+        if term not in low:
+            raise Reject(f"no {term} rate for any main bank")
+    # A home loan is not 1% and it is not 19%. The row filter in the fetcher is
+    # what keeps green top-ups and reno loans out of `lowest`; this band is what
+    # catches that filter having stopped working. The floor sits at 2.0 rather
+    # than 1.0 because the top-ups are carded at exactly 1.00% — a band that
+    # includes its own failure case is not a band. NZ's record low carded
+    # one-year rate was 2.19% in 2021, so 2.0 still has room underneath it.
+    for term, v in low.items():
+        if not 2.0 <= v["rate"] <= 15.0:
+            raise Reject(f"{term} rate of {v['rate']}% is not a mortgage rate")
+
+    # Named, not derived from the staged file's name: the two are the same in a
+    # real run, so a mismatch would silently skip the drift check rather than
+    # fail, and a gate that quietly does nothing is worse than no gate.
+    live = RAW / "mortgage_rates.json"
+    if live.exists():
+        old = (json.loads(live.read_text()).get("lowest") or {})
+        for term, v in low.items():
+            was = (old.get(term) or {}).get("rate")
+            if was and abs(v["rate"] - was) > 1.5:
+                raise Reject(f"{term} moved {v['rate'] - was:+.2f} points "
+                             f"({was}% to {v['rate']}%), tolerance 1.5")
+    return len(d.get("products", []))
+
+
 def check_wikipedia(path, prev):
     d = json.loads(path.read_text())
     good = [v for v in d.values() if (v.get("extract") or "").strip()]
@@ -139,6 +180,9 @@ SOURCES = [
            check_localboards, "council local boards; redrawn only at reorganisation"),
     Source("wikipedia", "fetch_wikipedia.py", "wikipedia.json", 180,
            check_wikipedia, "suburb intros; near-static"),
+    Source("mortgagerates", "fetch_mortgage_rates.py", "mortgage_rates.json", 7,
+           check_mortgage_rates,
+           "carded home loan rates; banks reprice within days of a wholesale move"),
 ]
 
 BUILD_STEPS = ["build_db.py", "build_detail.py", "build_map.py"]
@@ -218,24 +262,24 @@ def do_run(args):
         age = (started - last).days if last else None
         due = "all" in force or src.name in force or age is None or age >= src.every_days
         if not due:
-            print(f"  {src.name:<11} skip   (fetched {age}d ago, cadence {src.every_days}d)")
+            print(f"  {src.name:<13} skip   (fetched {age}d ago, cadence {src.every_days}d)")
             steps.append(dict(run_id=run_id, source=src.name, status="skipped",
                               started_at=started, finished_at=datetime.now(),
                               source_hash=state["last_hash"].get(src.name), rows=None,
                               message=f"not due for {src.every_days - age}d"))
             continue
         if args.dry_run:
-            print(f"  {src.name:<11} WOULD FETCH ({src.why})")
+            print(f"  {src.name:<13} WOULD FETCH ({src.why})")
             continue
 
         t0 = datetime.now()
-        print(f"  {src.name:<11} fetching...", flush=True)
+        print(f"  {src.name:<13} fetching...", flush=True)
         proc = run_script(src.script, {"AKL_OUT_DIR": str(INCOMING)})
         staged = INCOMING / src.artifact
 
         if proc.returncode != 0 or not staged.exists():
             msg = (proc.stderr.strip().splitlines() or ["no output"])[-1][:200]
-            print(f"  {src.name:<11} FAILED fetch: {msg}")
+            print(f"  {src.name:<13} FAILED fetch: {msg}")
             steps.append(dict(run_id=run_id, source=src.name, status="failed",
                               started_at=t0, finished_at=datetime.now(),
                               source_hash=None, rows=None, message=f"fetch: {msg}"))
@@ -244,7 +288,7 @@ def do_run(args):
         try:
             rows = src.check(staged, state)
         except Reject as exc:
-            print(f"  {src.name:<11} REJECTED: {exc}  (keeping previous data)")
+            print(f"  {src.name:<13} REJECTED: {exc}  (keeping previous data)")
             steps.append(dict(run_id=run_id, source=src.name, status="failed",
                               started_at=t0, finished_at=datetime.now(),
                               source_hash=None, rows=None, message=f"rejected: {exc}"))
@@ -253,7 +297,7 @@ def do_run(args):
 
         digest = sha256(staged)
         if digest == state["last_hash"].get(src.name):
-            print(f"  {src.name:<11} unchanged ({rows:,} rows)")
+            print(f"  {src.name:<13} unchanged ({rows:,} rows)")
             staged.unlink()
             steps.append(dict(run_id=run_id, source=src.name, status="unchanged",
                               started_at=t0, finished_at=datetime.now(),
@@ -263,7 +307,7 @@ def do_run(args):
         RAW.mkdir(parents=True, exist_ok=True)
         os.replace(staged, RAW / src.artifact)          # promote, atomically
         changed.append(src.name)
-        print(f"  {src.name:<11} updated ({rows:,} rows)")
+        print(f"  {src.name:<13} updated ({rows:,} rows)")
         steps.append(dict(run_id=run_id, source=src.name, status="ok",
                           started_at=t0, finished_at=datetime.now(),
                           source_hash=digest, rows=rows, message=None))
@@ -348,21 +392,21 @@ def do_status(args):
     con = duckdb.connect(str(DB), read_only=True)
     cadence = {s.name: s.every_days for s in SOURCES}
 
-    print(f"{'source':<13}{'status':<10}{'last ok':<18}{'age':<10}{'cadence':<11}"
+    print(f"{'source':<15}{'status':<10}{'last ok':<18}{'age':<10}{'cadence':<11}"
           f"{'rows':>9}")
     rows = con.execute("SELECT * FROM pipeline_status").fetchall()
     seen = {r[0] for r in rows}
     for name, last_ok, days_ago, last_status, nrows, err in rows:
         every = cadence.get(name, 0)
         due = "DUE" if days_ago is None or days_ago >= every else f"in {every - days_ago}d"
-        print(f"  {name:<11} {str(last_status):<9} {str(last_ok)[:16]:<17} "
+        print(f"  {name:<13} {str(last_status):<9} {str(last_ok)[:16]:<17} "
               f"{f'{days_ago}d ago' if days_ago is not None else 'never':<9} "
               f"every {every:>3}d  {nrows or 0:>9,}  next {due}")
         if err:
             print(f"              last error: {err}")
     for s in SOURCES:
         if s.name not in seen:
-            print(f"  {s.name:<11} never run")
+            print(f"  {s.name:<13} never run")
 
     print("\nruns")
     for r in con.execute("""SELECT run_id, started_at, finished_at, trigger, status, note
