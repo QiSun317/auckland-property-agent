@@ -442,6 +442,7 @@
     <input type="search" id="q" data-zh-ph="搜索郊区，例如 Remuera / Albany" data-en-ph="Search a suburb, e.g. Remuera" list="names" autocomplete="off">
     <datalist id="names"></datalist>
     <span class="spacer"></span>
+    <div class="seg"><button id="toggleCalc" aria-pressed="false" data-zh="房贷 / 地税" data-en="Mortgage">房贷 / 地税</button></div>
     <div class="seg"><button id="toggleTable" aria-pressed="false" data-zh="数据表" data-en="Table">数据表</button></div>
   </div>
 
@@ -1667,6 +1668,20 @@ function mountCalc() {
   seedCalc(null);
   redrawCalc();
 }
+
+// The panel sits under the map and the legend, which on a 720px viewport puts
+// it 1.4 screens down — far enough that the first person to look for it asked
+// where it was. The map is the point of the page and should not be pushed down
+// for this, so the toolbar gets a way in instead. Kept in sync both ways: the
+// details element can also be opened by clicking it directly.
+const calcPanel = () => $('#calcMain');
+$('#toggleCalc').addEventListener('click', () => {
+  const d = calcPanel();
+  d.open = !d.open;
+  if (d.open) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+calcPanel().addEventListener('toggle', () =>
+  $('#toggleCalc').setAttribute('aria-pressed', String(calcPanel().open)));
 
 /* ==========================================================================
    选房助手

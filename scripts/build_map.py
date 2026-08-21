@@ -459,7 +459,7 @@ def main():
                 "smoothField", "fieldImage", "drawDetailMap", "enterDetail",
                 "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
                 "repayment", "councilRates", "calcCard", "renderCalcOut",
-                "seedCalc"]
+                "seedCalc", "calcPanel"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]
     if missing:
