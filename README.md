@@ -326,6 +326,86 @@ time travel                        version 0 仍然读得到 4.99
 `deltalake` + `pyarrow>=21`。pyarrow 低于 21 会**写得进、读不出**，
 报 `Repetition level histogram size mismatch`——脚本会直接告诉你这件事和修复命令。
 
+## Databricks
+
+出于一条硬限制，架构是**分工**而不是全搬：Free Edition 的 serverless 计算
+**出站网络被限制在少数可信域名**，而这个项目的五个源全是要往外抓的站点。
+所以抓取留在 GitHub Actions（它有开放网络，且这套 fetch→validate→promote 已经验证过），
+Databricks 做存储、SQL、建模。**入站调 workspace API 不受限**，这是分工能成立的原因。
+
+```
+GitHub Actions   抓 5 个站点 → 校验闸门 → 建库 → 建页面 → 发布
+      └── parquet → /Volumes/workspace/auckland/raw → CTAS → 7 张 Delta 表
+                    Databricks（workspace.auckland）
+```
+
+**Databricks 是目的地，不是依赖。** 同步步骤排在发布之后，它挂了页面照样上线。
+
+### bank_rate 在那边 MERGE，其余表整表替换
+
+这个区分是**正确性问题**，不是风格问题：
+
+- 其余 7 张表每次都从 `data/raw` 重新推导，`CREATE OR REPLACE TABLE` 是诚实的动词
+- `bank_rate` **累积**——它是唯一一张内容无法从当前快照重算的表。
+  一旦 MERGE 搬过去，它就必须从 CTAS 列表里拿掉，否则**下一次同步会把所有历史版本压平**
+
+`databricks_rates.py` 推的是**快照**，MERGE 在 Databricks 里跑。
+Databricks SQL 还把本地的三段合成了两段——它允许 `WHEN MATCHED` 和
+`WHEN NOT MATCHED BY SOURCE` 出现在同一条语句里，所以"关掉变价的"和"关掉下架的"一次完成。
+开新版本仍要单独一段：没有哪个 MERGE 能对同一条源行既更新匹配行又插入替代行。
+
+### 视图是问题，表是管道的形状
+
+`suburb_overview` / `source_agreement` / `revaluation` / `rate_series`。
+保存的查询指向视图而不是各自带一份 SQL——仪表盘瓦片各自抄一份 SQL 就是漂移的开始。
+
+### 两个价格源在哪里不一致
+
+页面上到处都是那句口径声明：`price` 是**单一厂商**的自动估值，不是成交价。
+议会的 CV 是覆盖每一个地块的**完全独立的第二意见**。两者中位数比值约 1.0——
+这既让人放心，又毫无信息量，因为它没说**在哪里**不一致。
+
+`train_avm.py` 不试图做更好的估值，而是问一个更窄也更答得了的问题：
+**商业 AVM 有多少能被议会自己的估价加地理特征解释，哪些郊区解释不了。**
+残差才是产出——一个 AVM 远离其 CV 分布所预测值的郊区，就是两个源讲不同故事的地方。
+
+205 个郊区，5 折**样本外**评分（几百行的样本内 R² 会好看得毫无意义）：
+
+| 模型 | MAPE | RMSE | R² |
+|---|---|---|---|
+| ridge | 7.33% | 149,339 | 0.875 |
+| **gbr** | **6.82%** | 150,944 | 0.872 |
+
+**最大的偏差验证了模型在测它该测的东西**：
+
+```
+Penrose            AVM   900,900   模型 2,104,373   -133.6%
+Ōkura              AVM 1,437,650   模型 1,995,222    -38.8%
+Herne Bay          AVM 3,011,600   模型 2,306,256    +23.4%
+Auckland Central   AVM   475,700   模型   572,617    -20.4%
+```
+
+Penrose 正是「已知口径问题」那节写死的例子：**CV 含全部计税单元，工业区的 CV 中位数
+明显偏离住宅口径**。模型只看 CV 分布，于是把工业地块的高估价当成了住宅信号，
+而 AVM 只看住宅。**模型独立地重新发现了 README 里已经手写下来的那条警告。**
+Auckland Central 是公寓（同理），Herne Bay 则是反向——市场价比 CV 分布预测的更高。
+
+结果写回 `workspace.auckland.suburb_confidence`：high 161 / medium 40 / low 4。
+
+MLflow 实验在 `/Users/<你>/auckland-source-agreement`。
+一个坑：MLflow 现在默认用 skops 序列化 sklearn，会把 `numpy.dtype` 判成不可信类型，
+任何带 scaler 的 pipeline 都记录不上——要显式指定 `serialization_format="cloudpickle"`。
+
+### 用法
+
+```bash
+python3 scripts/databricks_sync.py --dry-run   # 看会推什么，不需要凭证
+python3 scripts/databricks_rates.py --history  # 直接从 lakehouse 读利率序列
+```
+
+CI 里 `weekly.yml` 自动同步；`databricks-build.yml` 手动触发建视图和训模型。
+凭证是 `DATABRICKS_HOST` / `DATABRICKS_TOKEN` 两个 secret。
+
 ### 上云的口子
 
 `scripts/` 里没有任何 macOS 专属代码，路径走 `AKL_ROOT` / `AKL_RAW_DIR` /
