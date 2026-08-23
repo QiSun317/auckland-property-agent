@@ -237,3 +237,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # delta-rs occasionally fails to join a native worker at interpreter
+    # shutdown: every line of output is already written and flushed, main() has
+    # returned, no Python thread is left alive, and the process still sits
+    # there. Measured one hang in three on --show, indefinite. This runs inside
+    # the weekly pipeline, where that means hanging until the job timeout
+    # rather than failing, so leave through the door that does not wait for the
+    # native runtime to tidy up.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
