@@ -26,6 +26,8 @@ import gzip
 import json
 import os
 import re
+import shutil
+import tempfile
 import unicodedata
 from datetime import date, datetime
 from pathlib import Path
@@ -45,6 +47,9 @@ ROOT = Path(__file__).resolve().parent.parent
 RAW = Path(os.environ.get("AKL_RAW_DIR", ROOT / "data" / "raw"))
 DATA = ROOT / "data"
 DB = Path(os.environ.get("AKL_DB", DATA / "auckland.duckdb"))
+# What a clean checkout carries instead of the database itself.
+STATE = Path(os.environ.get("AKL_STATE_DB",
+                            DATA / "state" / "history.duckdb.gz"))
 
 VALUATION_ROUNDS = {"cv_2021": "2021-06-01", "cv_2024": "2024-05-01"}
 
@@ -71,6 +76,19 @@ ZONES = {
     "海岛": ["Waiheke", "Great Barrier"],
 }
 BOARD_ZONE = {b: z for z, bs in ZONES.items() for b in bs}
+
+
+# The same polygon under a new LINZ label, keyed by norm(). norm() folds
+# accents, case and St/Mt, which covers the fifteen macrons LINZ added in
+# August 2026 (Orakei -> Ōrākei); it cannot cover a suffix appearing, and those
+# quietly drop a suburb out of the price join. build_map imports this so the
+# database and the page can never disagree about which suburbs are priced —
+# they did, by two, until this moved out of build_map.
+ALIASES = {
+    "muriwaibeach": "muriwai",              # LINZ renamed, Opes still Muriwai
+    "manukaucitycentre": "manukau",
+    "mahurangi": "mahurangieast",
+}
 
 
 def norm(s):
@@ -158,11 +176,63 @@ def ensure_schema(con):
     """)
 
 
-def carry_history(con):
-    """Copy the append-only tables forward from the previous database file."""
-    for t in ("pipeline_run", "pipeline_step", "market_snapshot",
-              "valuation", "suburb_price_history", "suburb_description"):
+def carry_run_log(con):
+    """The two tables that key on nothing but themselves."""
+    for t in ("pipeline_run", "pipeline_step"):
         con.execute(f"INSERT INTO {t} SELECT * FROM prev.{t}")
+
+
+def carry_suburb_history(con):
+    """Carry the suburb-keyed history, re-pointing it by name.
+
+    suburb_id is row_number() over the boundary file ordered by name, so it is
+    positional: it means "the 143rd suburb alphabetically", not "Remuera". LINZ
+    published macronised names in August 2026 — Orakei -> Ōrākei, Ranui ->
+    Rānui, fifteen of them — and re-sorting moved 122 of 286 ids. Copying the
+    history across on the old id silently re-pointed a third of the dataset at
+    the wrong suburbs, and it did not error, because an integer is an integer.
+
+    So the join goes through the name, which is the key the source actually
+    thinks in — accents stripped and lowercased, because the change that
+    triggered this was purely orthographic and Orakei and Ōrākei are the same
+    place. A suburb that was genuinely renamed (Mahurangi East -> Mahurangi)
+    still drops its history, which is the honest outcome: nothing here can tell
+    a rename from a deletion plus an unrelated arrival.
+    """
+    con.execute("CREATE OR REPLACE TEMP MACRO same_place(a, b) AS "
+                "lower(strip_accents(a)) = lower(strip_accents(b))")
+    con.execute("""
+        INSERT INTO market_snapshot
+        SELECT s.suburb_id, m.* EXCLUDE (suburb_id)
+        FROM prev.market_snapshot m
+        JOIN prev.suburb p ON p.suburb_id = m.suburb_id
+        JOIN suburb s ON same_place(s.name, p.name);
+
+        INSERT INTO suburb_price_history
+        SELECT s.suburb_id, h.* EXCLUDE (suburb_id)
+        FROM prev.suburb_price_history h
+        JOIN prev.suburb p ON p.suburb_id = h.suburb_id
+        JOIN suburb s ON same_place(s.name, p.name);
+
+        INSERT INTO suburb_description
+        SELECT s.suburb_id, d.* EXCLUDE (suburb_id)
+        FROM prev.suburb_description d
+        JOIN prev.suburb p ON p.suburb_id = d.suburb_id
+        JOIN suburb s ON same_place(s.name, p.name);
+    """)
+
+
+def carry_valuations(con):
+    """Same hazard, same fix: ru_id is row_number() over valuation_ref, so one
+    parcel appearing or leaving shifts every id after it. valuation_ref is the
+    council's own identifier and does not move."""
+    con.execute("""
+        INSERT INTO valuation
+        SELECT r.ru_id, v.* EXCLUDE (ru_id)
+        FROM prev.valuation v
+        JOIN prev.rating_unit q ON q.ru_id = v.ru_id
+        JOIN rating_unit r ON r.valuation_ref = q.valuation_ref;
+    """)
 
 
 def main():
@@ -171,13 +241,26 @@ def main():
     if building.exists():
         building.unlink()
 
-    fresh = not DB.exists()
+    # A scheduled run in CI has no previous database — it starts from a clean
+    # checkout — but it does have the small export that scripts/export_state.py
+    # left behind, which carries the tables data/raw cannot rebuild. It has the
+    # same schema on purpose, so it attaches as `prev` and the existing
+    # carry-forward path does the rest.
+    prev_src, prev_tmp = (DB, None) if DB.exists() else (None, None)
+    if prev_src is None and STATE.exists():
+        prev_tmp = Path(tempfile.mkdtemp()) / "history.duckdb"
+        with gzip.open(STATE, "rb") as fin, prev_tmp.open("wb") as fout:
+            shutil.copyfileobj(fin, fout)
+        prev_src = prev_tmp
+        print(f"  no database yet — carrying history from {STATE.name}")
+
+    fresh = prev_src is None
     con = duckdb.connect(str(building))
     con.execute("INSTALL spatial; LOAD spatial;")
     ensure_schema(con)
     if not fresh:
-        con.execute(f"ATTACH '{DB}' AS prev (READ_ONLY)")
-        carry_history(con)
+        con.execute(f"ATTACH '{prev_src}' AS prev (READ_ONLY)")
+        carry_run_log(con)
 
     run_id = int(os.environ.get("AKL_RUN_ID") or
                  con.execute("SELECT coalesce(max(run_id), 0) + 1 FROM pipeline_run")
@@ -206,6 +289,8 @@ def main():
             SELECT n.*, coalesce(o.first_seen, current_date) AS first_seen
             FROM suburb_new n LEFT JOIN prev.suburb o USING (name);""")
     con.execute("DROP TABLE suburb_new")
+    if not fresh:
+        carry_suburb_history(con)   # by name: suburb_id is positional
 
     # Which local board each suburb sits in, plus how far out it is. Centroid
     # rather than overlap: a suburb belongs to exactly one board, and the
@@ -247,6 +332,11 @@ def main():
     key = {norm(name): i for i, name in
            con.execute("SELECT suburb_id, coalesce(name_ascii, name) FROM suburb")
               .fetchall()}
+    # ALIASES maps the LINZ spelling to the one the price source still uses, so
+    # register the price-source spelling as a second way in to the same suburb.
+    for linz, opes in ALIASES.items():
+        if linz in key:
+            key.setdefault(opes, key[linz])
 
     # ---- market snapshot: append-only, keyed on the source's release --------
     prices = json.loads((RAW / "opes_suburbs.json").read_text())
@@ -342,6 +432,8 @@ def main():
     # answers a 1.5 km radius query in ~20 ms, beating the indexed ST_Within
     # path, and the index cost ~40 MB. Add one if this grows 10x.
     con.execute("CREATE INDEX IF NOT EXISTS ru_suburb_idx ON rating_unit (suburb_id)")
+    if not fresh:
+        carry_valuations(con)       # by valuation_ref: ru_id is positional
 
     added_val = 0
     for col, vdate in VALUATION_ROUNDS.items():
@@ -420,6 +512,8 @@ def main():
     if not fresh:
         con.execute("DETACH prev")
     con.close()
+    if prev_tmp is not None:
+        shutil.rmtree(prev_tmp.parent, ignore_errors=True)
     os.replace(building, DB)     # atomic: readers keep the old file until now
 
     print(f"run {run_id} | raw rating units {n_raw:,}")

@@ -1,0 +1,138 @@
+# Weekly refresh: fetch whatever is due, rebuild the page, publish it.
+#
+# Runs whether or not the laptop is awake, which is the whole point — the
+# launchd job in ops/ only fires if the machine is on. The two can coexist:
+# both read data/raw as the source of truth and both leave the same state
+# behind, so whichever ran last is simply the current one.
+#
+# State, because a clean checkout has none:
+#   * data/raw  -> actions/cache. Bulky and fully re-derivable, so a cache miss
+#     costs about six minutes of refetching and nothing else. Never correctness.
+#   * data/state -> the ci-state branch. Tiny (24 KB) and NOT re-derivable: the
+#     accumulated market_snapshot and the per-source fetch times. Without the
+#     fetch times every run thinks every source is due and re-scrapes 217 pages
+#     for data that changes quarterly.
+#
+# Publishing is skipped unless SITE_DEPLOY_KEY is set, so this workflow is
+# useful the moment it lands and starts publishing when the key is added. See
+# the README section "每周自动刷新" for how to create it.
+
+name: weekly refresh
+
+on:
+  schedule:
+    # 19:00 UTC Sunday = 07:00 Monday in Auckland (08:00 while daylight saving
+    # is on; GitHub cron has no timezones and an hour either way does not
+    # matter for a job nobody is waiting on).
+    - cron: "0 19 * * 0"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "sources to force (space separated, or 'all')"
+        default: ""
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # to push the ci-state branch
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SITE_DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install duckdb
+
+      # Bulky, re-derivable. Restored for speed; a miss just refetches.
+      - name: Restore data/raw
+        uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: raw-${{ github.run_id }}
+          restore-keys: raw-
+
+      # Tiny, not re-derivable. This is the one that matters.
+      - name: Restore accumulated history
+        run: |
+          if git ls-remote --exit-code --heads origin ci-state >/dev/null 2>&1; then
+            git fetch --depth 1 origin ci-state
+            git checkout FETCH_HEAD -- data/state
+            ls -l data/state
+          else
+            echo "no ci-state branch yet — first run, starting clean"
+          fi
+
+      - name: Run pipeline
+        run: |
+          python3 scripts/pipeline.py run --trigger schedule \
+            ${{ inputs.force && format('--force {0}', inputs.force) || '' }}
+
+      - name: Save accumulated history
+        run: |
+          python3 scripts/export_state.py
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf .state-push
+          git init -q .state-push
+          cp data/state/history.duckdb.gz .state-push/
+          cd .state-push
+          git checkout -q -b ci-state
+          git add history.duckdb.gz
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "state after run $(date -u +%Y-%m-%d)"
+          # Force-push a single-commit branch: this is machine state, not
+          # history worth keeping, and 52 commits a year of a binary would only
+          # grow the repo.
+          git push -q --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            ci-state
+
+      - name: Publish the page
+        if: env.SITE_DEPLOY_KEY != ''
+        env:
+          AKL_SITE_REMOTE: git@github.com:QiSun317/auckland-house-heatmap.git
+        run: |
+          # A week where no source was due rebuilds nothing, so there is no
+          # page to push. That is success, not failure.
+          if [ ! -f heatmap.html ]; then
+            echo "nothing was due this week — no rebuild, nothing to publish"
+            exit 0
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$SITE_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ./ops/publish.sh "Weekly refresh"
+
+      - name: Say why nothing was published
+        if: env.SITE_DEPLOY_KEY == ''
+        run: |
+          echo "SITE_DEPLOY_KEY is not set, so the page was built but not published."
+          echo "The built page is attached to this run as an artifact."
+
+      - name: Keep the outputs either way
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: page-and-logs
+          path: |
+            heatmap.html
+            data/join_report.txt
+            data/state/history.duckdb.gz
+            logs/pipeline.jsonl
+          if-no-files-found: warn
+          retention-days: 30

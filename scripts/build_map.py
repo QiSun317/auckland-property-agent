@@ -15,6 +15,10 @@ import unicodedata
 from pathlib import Path
 from statistics import median
 
+# One definition of "these two names are the same place", shared with the
+# database build so the page and the db cannot disagree.
+from build_db import ALIASES
+
 try:
     import duckdb
 except ModuleNotFoundError:  # noqa: TRY003 - the message is the point
@@ -60,6 +64,11 @@ LAST_UPDATED = "2026-04-16"
 # Opes records that duplicate an area already covered by its constituent
 # suburbs, or that have no polygon in the LINZ layer.
 DROP_SUBURBS = {"Waiheke Island", "Kawau Island"}
+
+# How far the price join is allowed to fall before the build is a failure
+# rather than a quieter map. An unattended weekly run has nobody reading the
+# join report, so the drop has to stop the run instead of shipping.
+MIN_PRICED = 190
 
 # --- mortgage rates ------------------------------------------------------------
 # Fetched, validated and promoted like every other source (fetch_mortgage_rates
@@ -309,7 +318,9 @@ def main():
     for feat, path, box in zip(features, paths, boxes):
         a = feat["properties"]
         key = norm(a.get("name_ascii") or a["name"])
-        p = by_name.get(key)
+        p = by_name.get(key) or by_name.get(ALIASES.get(key, ""))
+        if p:
+            key = norm(p["suburb_name"])
         if p:
             used.add(key)
         rows.append({
@@ -376,6 +387,11 @@ def main():
     ]
     (DATA / "join_report.txt").write_text("\n".join(report) + "\n")
     print("\n".join(report[:6]))
+    if len(priced) < MIN_PRICED:
+        raise SystemExit(
+            f"only {len(priced)} suburbs matched a price, expected >={MIN_PRICED}.\n"
+            f"  unmatched price records: {unmatched}\n"
+            f"  usually a LINZ rename — add it to ALIASES in this script.")
 
     # ---- payload for the page -------------------------------------------------
     def num(v, nd=None):

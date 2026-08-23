@@ -13,6 +13,7 @@ python3 scripts/fetch_mortgage_rates.py  # 各银行挂牌房贷利率（1 秒�
 python3 scripts/build_detail.py      # 空间关联 + 按 35 米网格聚合
 python3 scripts/build_map.py         # 生成 heatmap.html + suburb_prices.csv
 python3 scripts/build_db.py          # 装进 DuckDB（约 20 秒）
+python3 scripts/export_state.py      # 导出 CI 需要的 24 KB 状态
 ```
 
 查询：
@@ -138,6 +139,39 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 
 `suburb` 和 `rating_unit` 是缓变参考数据，每次重建，但 `first_seen` 会带过来。
 
+### 位置序号做主键，撞上改名就静默错位（自动化逼出来的）
+
+搭每周任务时用 `git archive` 造了个和 CI 一样的干净 checkout 跑了一遍，
+结果发现一个**本地月度任务同样会中招**的问题。
+
+`suburb_id` 是 `row_number() OVER (ORDER BY name)` —— 它的含义是「按字母序第 143 个郊区」，
+不是「Remuera」。而 `market_snapshot` 正是按 `suburb_id` 做主键的。
+
+2026 年 8 月 LINZ 发布了带长音符号的地名（`Orakei → Ōrākei`、`Rānui`、`Patumāhoe`…共 15 个），
+重新排序后 **286 个里 122 个的 id 移位了**。搬历史时按旧 id 直接 INSERT，
+等于把三分之一的历史悄悄挂到了别的郊区上 —— 而且不报错，因为整数就是整数。
+实测那一次 `market_snapshot` 从 205 行涨到 229 行，同一个 release 凭空多出 24 行。
+
+`ru_id` 是同一个模式（`row_number() OVER (ORDER BY valuation_ref)`），
+125 万行 `valuation` 有同样的隐患：任何一个地块新增或消失，它之后的 id 全部移位。
+
+**改法：搬历史时按自然键重新映射**，而不是按位置序号。
+`market_snapshot` / `suburb_price_history` / `suburb_description` 经 `suburb.name` 走一遍，
+`valuation` 经 `rating_unit.valuation_ref` 走一遍。名字比较时**先去重音再比**
+（`lower(strip_accents(...))`）—— 这次触发问题的变化纯粹是拼写，
+`Orakei` 和 `Ōrākei` 是同一个地方，不该因此丢历史。
+真正的改名（`Mahurangi East → Mahurangi`）仍然会丢，这是诚实的结果：
+在这里没有任何信息能区分「改名」和「删掉一个、来了一个无关的」。
+
+修完之后同一次重建：`market_snapshot` 205 行、`+0`，`valuation` `+0`。
+
+顺带被这次改名打掉的还有两个郊区的价格：LINZ 把 `Muriwai` 改成 `Muriwai Beach`、
+`Manukau` 改成 `Manukau City Centre`，而价格源还用旧名，`norm()` 能折叠重音但折叠不了后缀，
+于是它们在地图上变成灰色斜纹、无人察觉。现在 `build_db.ALIASES` 里三条别名把它们接回来，
+`build_map` 直接 `import` 同一份 —— 别名只加在一边时，库里 203 个有价、页面 205 个，
+两边对不上。另外 `build_map` 现在会在匹配数掉到 190 以下时**直接失败**：
+无人值守的任务没人会去读 `join_report.txt`。
+
 ### 每次构建新库再原子替换
 
 `build_db.py` 先写 `auckland.duckdb.building`，通过 `ATTACH` 把历史从旧库搬过来，
@@ -177,15 +211,65 @@ cron 直接跳过这个月。代价是关机期间不跑。
 launchctl kickstart -p gui/$(id -u)/com.sunqi.auckland-pipeline
 ```
 
+### 每周自动刷新（GitHub Actions）
+
+`.github/workflows/weekly.yml`，**每周一 07:00 NZ**（cron 是 UTC，夏令时期间变 08:00）。
+笔记本合着盖也会跑，这是它相对 launchd 的唯一意义；两者可以并存，
+都以 `data/raw` 为真源头，谁最后跑谁就是当前状态。
+
+手动触发：仓库 Actions 页面 → weekly refresh → Run workflow，可以填 `force`。
+
+**干净 checkout 没有任何状态，所以状态分两处放**，依据是「丢了会怎样」：
+
+| 放哪 | 内容 | 丢了会怎样 |
+|---|---|---|
+| `actions/cache` | `data/raw`（62 万条估价等，25 MB） | 只是慢——重抓约 6 分钟。**永远不影响正确性** |
+| `ci-state` 分支 | `data/state/history.duckdb.gz`（24 KB） | 累积的 `market_snapshot` 和各源的抓取时间没了 |
+
+第二个才是要紧的。没有抓取时间，每周一都会认为所有源都到期，
+为季度才变一次的数据重抓 217 个页面。`scripts/export_state.py` 负责导出，
+只装那几张**从 raw 重建不出来的**表——`valuation`、`suburb_price_history`、
+`suburb_description` 都能从 raw 重新推导，所以一行都不带。
+它的 schema 直接 `import build_db` 复用，两边不可能漂移；
+build_db 发现没有旧库时就 ATTACH 它，走的还是原来那条「搬历史」的代码路径。
+
+导出是 gzip 的：DuckDB 文件几乎全是预分配的空块，1.85 MB 压完 24 KB。
+一周一次的话，这是「一年一个 GB」和「一年一个 MB」的差别。
+`ci-state` 分支每次强制推送单个 commit——这是机器状态，不是值得留的历史。
+
+`rating_unit.first_seen`（62 万行）**故意不带**：全仓库没有任何查询、视图或页面读它，
+带上会让状态文件从 24 KB 涨到 6.3 MB。CI 重建后每个地块的 first_seen 就是当天。
+
+**发布需要一个我不能替你建的凭证。** 工作流跑在私有仓库，要推到公开的
+`auckland-house-heatmap`。没配 `SITE_DEPLOY_KEY` 时**发布这步自动跳过**，
+页面作为 artifact 附在这次运行上，工作流照样成功。配好之后自动开始发布：
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "akl-ci" -f /tmp/akl_ci_key
+gh repo deploy-key add /tmp/akl_ci_key.pub -R QiSun317/auckland-house-heatmap -w -t "weekly refresh"
+gh secret set SITE_DEPLOY_KEY -R QiSun317/auckland-property-agent < /tmp/akl_ci_key
+rm -f /tmp/akl_ci_key /tmp/akl_ci_key.pub
+```
+
+deploy key 而不是 PAT：权限只限这一个仓库。
+
+**没到期的那一周不会发布任何东西。** 六个源都没到期时，pipeline 0 秒返回、
+不重建，也就没有页面可推——工作流把这个当成功，不当失败。
+利率的节奏因此设成 6 天而不是 7：定时任务早跑一小时就会看到 age=6 而跳过，
+那一周就白跑了。
+
 ### 上云的口子
 
-`scripts/` 里没有任何 macOS 专属代码，路径全部走 `AKL_ROOT` / `AKL_RAW_DIR` /
-`AKL_OUT_DIR` / `AKL_DB` 环境变量。搬到 CI 只需要换掉 `ops/` 里的调度器，
-`ops/github-actions.yml.example` 是现成的模板。
+`scripts/` 里没有任何 macOS 专属代码，路径走 `AKL_ROOT` / `AKL_RAW_DIR` /
+`AKL_OUT_DIR` / `AKL_DB` / `AKL_STATE_DB` 环境变量。
 
-真正要先想清楚的是**状态放哪**：追加的历史在 ~96 MB 的 duckdb 里，每月提交进仓库不现实。
-模板里列了三条路，推荐第 (b) 条 —— 把 `data/raw` 快照推到对象存储，每次从快照重建库，
-这跟本项目现有的「raw 是唯一真源头」模型一致。
+原来这里写着「状态放哪」是上云前要先想清楚的问题，并推荐把 `data/raw` 快照推到对象存储。
+上面那节是实际做出来的答案，比这个轻：**真正不可再生的只有 24 KB**
+（`market_snapshot` + 抓取时间），放 git 分支就够；`data/raw` 是纯性能问题，
+丢了只是慢 6 分钟，用 `actions/cache` 就行。不需要 S3/R2，也不需要多一个服务。
+
+对象存储仍然是对的，如果哪天要**跨机器共享 raw**（比如本地和 CI 都在跑、
+都想省下重抓），或者 `rating_unit.first_seen` 这类大而不可再生的东西真的要留下来。
 
 ## 中英双语
 
@@ -597,6 +681,7 @@ ramp，红臂在 OKLCH 空间镜像每一档的明度与彩度，因此两侧感
 
 - [x] ~~点开 suburb 看简介 + 区内房价热力图~~
 - [x] ~~本地数据库 + 每月自动刷新~~
+- [x] ~~每周一 GitHub Actions 自动刷新并发布，不依赖笔记本是否开着~~
 - [ ] 攒够几期 `market_snapshot` 后，在详情页加一条「我们自己观测到的」价格曲线
       （现在图上那条是数据源给的历史，不是我们采集的）
 - [x] ~~页面内嵌选房助手，预算优先 + 优缺点 + 自动打开对应热力图~~

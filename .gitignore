@@ -17,6 +17,9 @@ data/suburb_detail.json
 data/suburb_prices.csv
 data/join_report.txt
 data/incoming/
+# CI keeps this on the ci-state branch instead; locally it is just an export.
+data/state/
+.state-push/
 build/
 heatmap.html
 heatmap.html.building

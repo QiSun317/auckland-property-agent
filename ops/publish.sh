@@ -16,9 +16,13 @@ PAGE="$ROOT/heatmap.html"
 
 [ -f "$PAGE" ] || { echo "heatmap.html not built yet" >&2; exit 1; }
 
+# CI pushes over SSH with a deploy key scoped to the site repo; a laptop uses
+# HTTPS and whatever credential helper is already set up.
+SITE_REMOTE="${AKL_SITE_REMOTE:-https://github.com/$SITE_REPO.git}"
+
 if [ ! -d "$WORK/.git" ]; then
   rm -rf "$WORK"
-  git clone -q "https://github.com/$SITE_REPO.git" "$WORK"
+  git clone -q "$SITE_REMOTE" "$WORK"
 fi
 git -C "$WORK" fetch -q origin main
 git -C "$WORK" reset -q --hard origin/main

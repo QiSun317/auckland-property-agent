@@ -26,8 +26,10 @@ import gzip
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,6 +43,7 @@ RAW = DATA / "raw"
 INCOMING = DATA / "incoming"
 LOGS = ROOT / "logs"
 DB = DATA / "auckland.duckdb"
+STATE = DATA / "state" / "history.duckdb.gz"
 PY = sys.executable
 
 
@@ -180,7 +183,11 @@ SOURCES = [
            check_localboards, "council local boards; redrawn only at reorganisation"),
     Source("wikipedia", "fetch_wikipedia.py", "wikipedia.json", 180,
            check_wikipedia, "suburb intros; near-static"),
-    Source("mortgagerates", "fetch_mortgage_rates.py", "mortgage_rates.json", 7,
+    # 6, not 7, deliberately: the scheduled job runs weekly, and a cadence of
+    # exactly 7 means a run that lands an hour early sees age 6, skips, and
+    # publishes nothing that week. Rates move daily, so refetching a day early
+    # costs one request.
+    Source("mortgagerates", "fetch_mortgage_rates.py", "mortgage_rates.json", 6,
            check_mortgage_rates,
            "carded home loan rates; banks reprice within days of a wholesale move"),
 ]
@@ -196,30 +203,53 @@ PUBLISH = ROOT / "ops" / "publish.sh"
 # state
 # --------------------------------------------------------------------------
 def db_state():
-    """Last-success times, last hashes, and the baselines the gates compare to."""
+    """Last-success times, last hashes, and the baselines the gates compare to.
+
+    Read from the live database when there is one, and otherwise from the small
+    export a previous run left in data/state. A CI run starts from a clean
+    checkout: without the fallback every source looks never-fetched, so a weekly
+    job would re-scrape 217 pages for quarterly data — and run_id would restart
+    at 1 and collide with the carried log, where the primary key silently drops
+    the new row.
+    """
     state = {"last_ok": {}, "last_hash": {}, "run_id": 1,
              "median_price": None, "mean_cv": None}
+    path, tmp = DB, None
     if not DB.exists():
-        return state
+        if not STATE.exists():
+            return state
+        tmp = Path(tempfile.mkdtemp()) / "history.duckdb"
+        with gzip.open(STATE, "rb") as fin, tmp.open("wb") as fout:
+            shutil.copyfileobj(fin, fout)
+        path = tmp
     try:
         import duckdb
-        con = duckdb.connect(str(DB), read_only=True)
-        for src, ts, h in con.execute("""
+        con = duckdb.connect(str(path), read_only=True)
+        for name, ts, h in con.execute("""
             SELECT source, max(finished_at),
                    arg_max(source_hash, finished_at)
             FROM pipeline_step WHERE status IN ('ok','unchanged')
             GROUP BY 1""").fetchall():
-            state["last_ok"][src] = ts
-            state["last_hash"][src] = h
+            state["last_ok"][name] = ts
+            state["last_hash"][name] = h
         state["run_id"] = con.execute(
             "SELECT coalesce(max(run_id),0)+1 FROM pipeline_run").fetchone()[0]
-        state["median_price"] = con.execute(
-            "SELECT median(avg_house_value) FROM suburb_market").fetchone()[0]
-        state["mean_cv"] = con.execute(
-            "SELECT avg(cv) FROM rating_unit_current").fetchone()[0]
+        # Drift baselines live in views the state export does not carry, so a
+        # CI run legitimately has none. Asked for separately: without their own
+        # try, a missing view would throw past the fetch times above and print
+        # a failure for something that is working as designed.
+        for key, q in (("median_price", "SELECT median(avg_house_value) FROM suburb_market"),
+                       ("mean_cv", "SELECT avg(cv) FROM rating_unit_current")):
+            try:
+                state[key] = con.execute(q).fetchone()[0]
+            except Exception:  # noqa: BLE001 - no baseline just means no drift gate
+                pass
         con.close()
     except Exception as exc:  # noqa: BLE001 - a missing/old db must not block a run
         print(f"  (could not read previous state: {exc})", file=sys.stderr)
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp.parent, ignore_errors=True)
     return state
 
 
@@ -260,7 +290,17 @@ def do_run(args):
     for src in SOURCES:
         last = state["last_ok"].get(src.name)
         age = (started - last).days if last else None
-        due = "all" in force or src.name in force or age is None or age >= src.every_days
+        # Cadence answers "is this stale", which is the wrong question when the
+        # file is not there at all. A clean CI checkout carries the recorded
+        # fetch times but not the bulky raw files, so without this every run
+        # would skip prices as recently fetched and then fail the build on a
+        # missing opes_suburbs.json. True locally too: delete a raw file and the
+        # old code skipped it and broke the build rather than refetching.
+        missing = not (RAW / src.artifact).exists()
+        due = ("all" in force or src.name in force or missing
+               or age is None or age >= src.every_days)
+        if missing and last:
+            print(f"  {src.name:<13} due    ({src.artifact} is not in data/raw)")
         if not due:
             print(f"  {src.name:<13} skip   (fetched {age}d ago, cadence {src.every_days}d)")
             steps.append(dict(run_id=run_id, source=src.name, status="skipped",
