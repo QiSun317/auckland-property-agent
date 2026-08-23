@@ -118,7 +118,11 @@ def main():
                                "features": ",".join(FEATURES), "folds": 5})
             mlflow.log_metrics({"cv_mape_pct": mape, "cv_rmse": rmse, "cv_r2": r2})
             pipe.fit(design, yv)
-            mlflow.sklearn.log_model(pipe, name=label)
+            # cloudpickle, not the default: MLflow now serialises sklearn
+            # through skops, which refuses numpy.dtype as an untrusted type and
+            # fails on any pipeline with a scaler in it.
+            mlflow.sklearn.log_model(pipe, name=label,
+                                     serialization_format="cloudpickle")
             results[label] = (mape, rmse, r2, pred)
             print(f"  {label:<6} out-of-fold  MAPE {mape:5.2f}%   "
                   f"RMSE {rmse:>10,.0f}   R2 {r2:.3f}")
