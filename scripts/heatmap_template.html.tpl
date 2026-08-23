@@ -400,6 +400,30 @@
                font-variant-numeric:tabular-nums; }
   .rec .cost b { color:var(--ink-2); font-weight:600; }
 
+  .rec.assess .verdict { margin:6px 0 8px; font-size:12.5px; color:var(--ink-2); }
+  .rec.assess .verdict b { color:var(--ink); }
+  .astats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 14px;
+            font-size:12px; margin:8px 0 10px; }
+  .astats div { border-bottom:1px solid var(--hair); padding-bottom:4px; }
+
+  .cmp { margin-top:9px; }
+  .cmp table { border-collapse:collapse; width:100%; font-size:12.5px; min-width:340px; }
+  .cmp th, .cmp td { padding:6px 10px; border-bottom:1px solid var(--hair); text-align:right;
+                     font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .cmp thead th { text-align:right; font-weight:650; color:var(--ink); font-size:13px; }
+  .cmp thead th em { display:block; font-style:normal; font-size:10.5px;
+                     color:var(--muted); font-weight:400; }
+  .cmp tbody th { text-align:left; font-weight:400; color:var(--muted); font-size:11.5px; }
+  .cmp td.win { color:var(--ink); font-weight:650; background:var(--hair); border-radius:3px; }
+  .cmpnote { font-size:11px; color:var(--muted); line-height:1.55; margin:8px 0 0; }
+
+  .ranktbl { border-collapse:collapse; width:100%; font-size:12.5px; }
+  .ranktbl td { padding:5px 9px; border-bottom:1px solid var(--hair); }
+  .ranktbl td.n { color:var(--muted); width:1.6em; font-variant-numeric:tabular-nums; }
+  .ranktbl td.z { color:var(--muted); font-size:11px; }
+  .ranktbl td.v { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+  #aiLog .tw { overflow-x:auto; margin:6px 0; }
+
   @media (max-width:560px) {
     .calcin, .calcrows { grid-template-columns:1fr; }
   }
@@ -520,6 +544,9 @@
     <button data-zh="预算 110 万，三房，北岸" data-en="Budget $1.1m, 3 bedrooms, North Shore">预算 110 万，三房，北岸</button>
     <button data-zh="预算 90 万投资，看重租金回报" data-en="$900k to invest, want rental yield">预算 90 万投资，看重租金回报</button>
     <button data-zh="预算 150 万，要大院子，离市中心 20 公里内" data-en="$1.5m, big section, within 20 km of the city">预算 150 万，要大院子，离市中心 20 公里内</button>
+    <button data-zh="Remuera 怎么样" data-en="What is Remuera like?">Remuera 怎么样</button>
+    <button data-zh="Papakura 和 Manurewa 哪个好" data-en="Papakura or Manurewa?">Papakura 和 Manurewa 哪个好</button>
+    <button data-zh="哪个区涨得最快" data-en="Which suburbs grew fastest?">哪个区涨得最快</button>
   </div>
   <div class="aifoot" id="aiFoot"></div>
   <form id="aiForm">
@@ -1721,12 +1748,19 @@ function budgetScore(a) {
 
 /* ---------- request parsing ---------- */
 const CN_NUM = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8 };
+// Bare English zone names ("south", "the east") are matched on a word
+// boundary, not as substrings — the reason they were missing is that
+// `includes('west')` also matches Westmere. Without them an English reader
+// typing "south" had their zone silently dropped: 157 suburbs came back where
+// the same question in Chinese returned 35.
+const zoneHit = (t, w) => /^[a-z ]+$/.test(w)
+  ? new RegExp(`\\b${w}\\b`).test(t) : t.includes(w);
 const ZONE_WORDS = {
   '北岸': ['北岸', 'north shore', 'northshore'],
-  '西区': ['西区', '西奥克兰', 'west auckland', '西边'],
+  '西区': ['西区', '西奥克兰', 'west auckland', '西边', 'west'],
   '中区': ['中区', '市中心', '中心区', 'central', 'cbd', '市区', '城里'],
-  '东区': ['东区', '东奥克兰', 'east auckland', '东边'],
-  '南区': ['南区', '南奥克兰', 'south auckland', '南边'],
+  '东区': ['东区', '东奥克兰', 'east auckland', '东边', 'east'],
+  '南区': ['南区', '南奥克兰', 'south auckland', '南边', 'south'],
   '北部乡村': ['rodney', '北部', '乡村'],
   '海岛': ['waiheke', '激流岛', '海岛'],
 };
@@ -1774,7 +1808,7 @@ function parseRequest(text) {
   else if (/离市中心近|靠近市中心|close to (the )?(cbd|city)/.test(t)) c.maxKm = 12;
 
   for (const [zone, words] of Object.entries(ZONE_WORDS))
-    if (words.some(w => t.includes(w))) c.zones.push(zone);
+    if (words.some(w => zoneHit(t, w))) c.zones.push(zone);
   // "市中心" is usually a reference point, not a destination: "离市中心 25 公里"
   // and "上班在市中心" are both distance constraints, not "I want to live there".
   const asReference = /(离|距|到|near|from)\s*(市中心|cbd|city)/.test(t)
@@ -2129,6 +2163,196 @@ function describeCriteria(c) {
   return bits.length ? bits.join(L('、', ', ')) : L('（没读出具体条件）', '(nothing specific read)');
 }
 
+/* ==========================================================================
+   Answer shapes
+   A shortlist was the only thing this could say, so every question came out as
+   one — "how is Remuera" produced a ranked recommendation of Remuera, which is
+   an odd way to answer a question nobody asked. Four shapes now, chosen by
+   local rules before the model is involved:
+
+     shortlist  criteria -> ranked suburbs           (what it always did)
+     assess     one suburb -> what it is like
+     compare    two or more -> where they differ
+     explain    a question about the data -> computed here, not by the model
+
+   The verification contract is untouched, deliberately. assess and compare
+   still come back as picks[].why, one paragraph per suburb, so every figure is
+   still checked against that suburb's own row. explain is computed from the
+   dataset and never asks the model for a number at all.
+   ========================================================================== */
+const ASK_WORDS = /怎么样|怎样|如何|值得|好不好|评价|介绍|说说|讲讲|了解|what.?s .* like|how is|how's|tell me about|worth|describe/i;
+const CMP_WORDS = /哪个|那个|对比|比较|相比|还是|vs\.?|versus|compare|better|which of/i;
+const AGG_WORDS = /最贵|最便宜|最高|最低|最快|最好卖|排名|平均|中位|整体|多少|哪些区|什么价|价位|贵不贵|dearest|cheapest|highest|lowest|fastest|average|median|overall|how many|how much|rank|what does .{0,12}cost/i;
+
+function readIntent(text, c) {
+  const named = c.suburbs.length;
+  if (named >= 2 && CMP_WORDS.test(text)) return 'compare';
+  if (named >= 2) return 'compare';
+  if (named === 1 && (ASK_WORDS.test(text) || !(c.budget || c.beds || c.wants.length)))
+    return 'assess';
+  // A stated budget means they want somewhere to buy, not a statistic —
+  // "预算 110 万" contains 多少-shaped words often enough to matter.
+  if (!named && !c.budget && AGG_WORDS.test(text)) return 'explain';
+  return 'shortlist';
+}
+
+// Where a suburb sits in the region, in words. A price means little without
+// knowing that it is the 12th dearest of 205.
+function standing(s) {
+  const rank = sortedPrices.filter(p => p < s.p).length;
+  const pct = Math.round(rank / sortedPrices.length * 100);
+  return { rank: sortedPrices.length - rank, of: sortedPrices.length, pct };
+}
+
+function assessBlock(s, c) {
+  const dt = s.dt, st = s.p ? standing(s) : null;
+  const r = { s, a: affordShare(s, c.budget), bs: 0, prefScore: 0, total: 0 };
+  const pc = prosCons(r, c);
+  const row = (k, v) => v == null ? '' : `<div><span>${k}</span><span>${v}</span></div>`;
+
+  const verdict = st
+    ? L(`全区 ${st.of} 个有价格的郊区里排第 <b>${st.rank}</b> 贵（高于 ${st.pct}% 的郊区）。`,
+        `The <b>${st.rank}</b> dearest of ${st.of} priced suburbs — above ${st.pct}% of them.`)
+    : L('这个区没有市场价格数据。', 'No market price data for this suburb.');
+
+  const stats = [
+    row(L('入门价（25% 分位 CV）', 'Entry price (25th pct CV)'), dt ? fmt(dt.q[1]) : null),
+    row(L('政府估价中位', 'Median council CV'), dt ? fmt(dt.med) : null),
+    row(L('平均估值', 'Average value'), s.p ? fmt(s.p) : null),
+    row(L('近一年变化', 'Past year'), s.y == null ? null : pct(s.y)),
+    row(L('长期年化增长', 'Long-term growth'), s.g == null ? null : s.g.toFixed(1) + '%'),
+    row(L('估算租金回报', 'Est. gross yield'), s.i == null ? null : s.i.toFixed(1) + '%'),
+    row(L('周租金中位', 'Median rent/wk'), s.r ? '$' + s.r : null),
+    row(L('中位售出天数', 'Days to sell'), s.s ? s.s + L(' 天', '') : null),
+    row(L('近 12 月成交', 'Sold, 12m'), s.c ? s.c + L(' 套', '') : null),
+    row(L('离市中心', 'To the city'), s.km == null ? null : s.km + ' km'),
+  ].join('');
+
+  return { verdict, stats, pc, r };
+}
+
+function renderAssess(s, c, why) {
+  const b = assessBlock(s, c);
+  const el = document.createElement('div');
+  el.className = 'rec assess';
+  el.innerHTML = `
+    <div class="top"><span class="nm">${s.n}</span>
+      <span class="zn">${zoneL(s.z)}${s.km == null ? '' : ' · ' + s.km + ' km'}</span></div>
+    <p class="verdict">${b.verdict}</p>
+    ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
+    <div class="dstats astats">${b.stats}</div>
+    <ul>${b.pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
+        ${b.pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
+    <div class="cost">${costLine(s)}</div>
+    <button class="go">${L(`打开 ${s.n} 热力图 →`, `Open ${s.n} heat map →`)}</button>`;
+  el.querySelector('.go').addEventListener('click', () => {
+    enterDetail(s.n);
+    if (innerWidth < 900) closePanel();
+  });
+  el.addEventListener('pointerenter', () => focusOnMap(s.n));
+  el.addEventListener('pointerleave', clearMapFocus);
+  return el;
+}
+
+// Only the rows where they actually differ. A table where every line reads
+// "about the same" is a table nobody finishes.
+const CMP_ROWS = [
+  ['入门价', 'Entry price', s => s.dt && s.dt.q[1], fmt, 'low'],
+  ['政府估价中位', 'Median CV', s => s.dt && s.dt.med, fmt, 'low'],
+  ['平均估值', 'Average value', s => s.p, fmt, 'low'],
+  ['近一年变化', 'Past year', s => s.y, v => pct(v), 'high'],
+  ['长期年化增长', 'Long-term growth', s => s.g, v => v.toFixed(1) + '%', 'high'],
+  ['租金回报', 'Gross yield', s => s.i, v => v.toFixed(1) + '%', 'high'],
+  ['周租金中位', 'Median rent/wk', s => s.r, v => '$' + v, 'high'],
+  ['售出天数', 'Days to sell', s => s.s, v => v + L(' 天', ''), 'low'],
+  ['近 12 月成交', 'Sold, 12m', s => s.c, v => String(v), 'high'],
+  ['离市中心', 'To the city', s => s.km, v => v + ' km', 'low'],
+  ['典型地块', 'Typical section', s => s.la, v => v + ' m²', 'high'],
+];
+
+function renderCompare(list, c) {
+  const el = document.createElement('div');
+  el.className = 'cmp';
+  const head = list.map(s => `<th>${s.n}<em>${zoneL(s.z)}</em></th>`).join('');
+  const rows = CMP_ROWS.map(([zh, en, get, fmtv, better]) => {
+    const vals = list.map(get);
+    if (vals.every(v => v == null)) return '';
+    const nums = vals.filter(v => v != null);
+    // Nothing is "best" if they are within a rounding error of each other.
+    const spread = Math.max(...nums) - Math.min(...nums);
+    const win = spread / Math.max(...nums.map(Math.abs), 1) < 0.02 ? null
+      : (better === 'high' ? Math.max(...nums) : Math.min(...nums));
+    return `<tr><th>${L(zh, en)}</th>` + vals.map(v =>
+      `<td class="${v != null && v === win ? 'win' : ''}">${v == null ? '—' : fmtv(v)}</td>`
+    ).join('') + '</tr>';
+  }).join('');
+  el.innerHTML = `<div class="tw"><table><thead><tr><th></th>${head}</tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <p class="cmpnote">${L('高亮的是该行更有利的一侧。价格类越低越有利，增长、回报、成交量越高越有利——但「有利」取决于你是自住还是投资。',
+      'Highlighted is the more favourable side of each row. Lower is better for prices, higher for growth, yield and turnover — though which of those counts as better depends on whether you are living in it or renting it out.')}</p>`;
+  return el;
+}
+
+/* ---------- questions the page can answer by itself ---------- */
+// Not `priced` — that name is already a module-level array up top, and
+// shadowing it at the top level is a page-wide SyntaxError, not a scoping bug.
+const rankable = () => all.filter(s => s.p && s.dt);
+
+const AGGS = [
+  { re: /最贵|dearest|most expensive|priciest/i,
+    run: () => rank('p', -1, L('平均估值最高', 'highest average value'), fmt) },
+  { re: /最便宜|cheapest|least expensive/i,
+    run: () => rank('q1', 1, L('入门价最低', 'lowest entry price'), fmt) },
+  { re: /涨得最快|增长最快|升值最快|fastest[- ]?grow|grew (the )?(fastest|most)|highest growth|best growth/i,
+    run: () => rank('g', -1, L('长期年化增长最高', 'highest long-term growth'), v => v.toFixed(1) + '%') },
+  { re: /回报最高|收益最高|highest yield|best yield/i,
+    run: () => rank('i', -1, L('估算租金回报最高', 'highest estimated gross yield'), v => v.toFixed(1) + '%') },
+  { re: /最好卖|卖得最快|fastest.*sell|quickest.*sell|sell.*fastest/i,
+    run: () => rank('s', 1, L('中位售出天数最少', 'fewest median days to sell'), v => v + L(' 天', ' days')) },
+  { re: /成交最多|最活跃|most sold|most active/i,
+    run: () => rank('c', -1, L('近 12 个月成交最多', 'most sales in the past 12 months'), v => v + L(' 套', '')) },
+];
+
+const GETTERS = { p: s => s.p, g: s => s.g, i: s => s.i, s: s => s.s, c: s => s.c,
+                  q1: s => s.dt.q[1] };
+
+function rank(key, dir, label, fmtv) {
+  const get = GETTERS[key];
+  const list = rankable().filter(s => get(s) != null)
+                       .sort((a, b) => (get(a) - get(b)) * dir).slice(0, 8);
+  if (!list.length) return null;
+  const rows = list.map((s, i) =>
+    `<tr><td class="n">${i + 1}</td><td>${s.n}</td><td class="z">${zoneL(s.z)}</td>` +
+    `<td class="v">${fmtv(get(s))}</td></tr>`).join('');
+  return `<p>${L(`${label}的 8 个郊区（共 ${rankable().length} 个有数据）：`,
+                 `The 8 suburbs with the ${label} (of ${rankable().length} with data):`)}</p>
+    <div class="tw"><table class="ranktbl"><tbody>${rows}</tbody></table></div>`;
+}
+
+// "How much is the East" — an aggregate over one of the seven zones.
+function zoneAnswer(text) {
+  const lower = text.toLowerCase();
+  const zone = Object.entries(ZONE_WORDS).find(([, ws]) =>
+    ws.some(w => zoneHit(lower, w)));
+  if (!zone) return null;
+  const list = rankable().filter(s => s.z === zone[0]);
+  if (!list.length) return null;
+  const med = a => { const v = a.slice().sort((x, y) => x - y); return v[Math.floor(v.length / 2)]; };
+  return `<p>${L(`<b>${zoneL(zone[0])}</b>：${list.length} 个有数据的郊区。`,
+                 `<b>${zoneL(zone[0])}</b>: ${list.length} suburbs with data.`)}</p>
+    <div class="dstats astats">
+      <div><span>${L('入门价中位', 'Median entry price')}</span><span>${fmt(med(list.map(s => s.dt.q[1])))}</span></div>
+      <div><span>${L('平均估值中位', 'Median average value')}</span><span>${fmt(med(list.map(s => s.p)))}</span></div>
+      <div><span>${L('最便宜', 'Cheapest')}</span><span>${[...list].sort((a, b) => a.dt.q[1] - b.dt.q[1])[0].n}</span></div>
+      <div><span>${L('最贵', 'Dearest')}</span><span>${[...list].sort((a, b) => b.p - a.p)[0].n}</span></div>
+    </div>`;
+}
+
+function explainAnswer(text) {
+  for (const a of AGGS) if (a.re.test(text)) { const r = a.run(); if (r) return r; }
+  return zoneAnswer(text);
+}
+
 async function handle(text) {
   if (AI.busy) return;
   AI.busy = true;
@@ -2136,10 +2360,30 @@ async function handle(text) {
   say(text.replace(/</g, '&lt;'), 'msg-user');
 
   const c = parseRequest(text);
-  if (offTopic(text, c)) {
-    refuse();
-    AI.busy = false; $('#aiSend').disabled = false; return;
+  const intent = readIntent(text, c);
+  const done = () => { AI.busy = false; $('#aiSend').disabled = false; };
+
+  // An aggregate is arithmetic over the dataset, and the page can do it
+  // exactly. So it does — rather than asking the model for a number and then
+  // having to check whether it made it up.
+  //
+  // Tried before the off-topic gate, deliberately: a question this page can
+  // answer from its own data is on topic by definition, and "how much is the
+  // East" was being refused for want of a budget or a suburb name.
+  if (intent === 'explain') {
+    const ans = explainAnswer(text);
+    if (ans) {
+      say(ans);
+      say(`<span class="muted-note">${L(
+        '这是页面直接算的，没有经过模型。想看某个区的详细评价，直接说区名；想比较，说两个区名。',
+        'Computed straight from the dataset, no model involved. Name a suburb for a full assessment, or two to compare them.')}</span>`);
+      return done();
+    }
+    // Not one of the shapes it can compute — fall through and treat it as a
+    // request for suburbs, which is usually what it turns out to be.
   }
+
+  if (offTopic(text, c)) { refuse(); return done(); }
 
   let picks = null, lead = null, modelWhy = new Map(), dropped = 0;
   if (MODEL_ON) {
@@ -2204,6 +2448,31 @@ async function handle(text) {
           'What I can filter on: <b>price, bedroom mix, section size, distance to the city, ' +
           'rental yield and how actively a suburb trades</b>. Give me a budget or an area and I can start.'));
     AI.busy = false; $('#aiSend').disabled = false; return;
+  }
+
+  // A named suburb is a question about that suburb, not a request to have it
+  // recommended back. The model's prose is reused where it wrote any, and it
+  // is verified exactly as before — one paragraph checked against one row.
+  if (intent === 'assess' || intent === 'compare') {
+    const list = c.suburbs.map(n => byName.get(n)).filter(s => s && s.dt);
+    if (list.length) {
+      if (intent === 'compare' && list.length >= 2) {
+        say(lead || L(`<b>${list.map(s => s.n).join(' vs ')}</b>，按这个数据集能比的都在下面：`,
+                      `<b>${list.map(s => s.n).join(' vs ')}</b> — everything this dataset can compare them on:`));
+        say('').appendChild(renderCompare(list, c));
+      } else {
+        say(lead || L(`关于 <b>${list[0].n}</b>：`, `About <b>${list[0].n}</b>:`));
+      }
+      const box = say('');
+      list.forEach(s => box.appendChild(renderAssess(s, c, modelWhy.get(s.n))));
+      if (c.missing.length)
+        say(`<span class="warn">${missingLabels(c.missing)}</span>` +
+            L('，所以上面<b>没有</b>包含这一维。', ' — so none of the above accounts for it.'));
+      say(`<span class="muted-note">${L(
+        '数字全部来自本页数据集，跟郊区详情页是同一份。',
+        'Every figure comes from this page\u2019s own dataset — the same one behind the suburb detail view.')}</span>`);
+      return done();
+    }
   }
 
   // Rules produce the answer whenever the model did not.
