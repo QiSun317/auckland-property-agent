@@ -80,6 +80,13 @@ jobs:
 
       - name: Save accumulated history
         run: |
+          # A week where nothing was due rebuilds nothing, so there is no
+          # database to export from — and nothing to export, because the state
+          # already on the branch is still current. Fetch times are absolute.
+          if [ ! -f data/auckland.duckdb ]; then
+            echo "nothing was due this week — state on ci-state is unchanged"
+            exit 0
+          fi
           python3 scripts/export_state.py
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
