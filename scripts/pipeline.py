@@ -44,6 +44,7 @@ INCOMING = DATA / "incoming"
 LOGS = ROOT / "logs"
 DB = DATA / "auckland.duckdb"
 STATE = DATA / "state" / "history.duckdb.gz"
+RATE_TABLE = DATA / "state" / "bank_rate"
 PY = sys.executable
 
 
@@ -355,6 +356,24 @@ def do_run(args):
     if args.dry_run:
         print("dry run: nothing fetched, nothing rebuilt")
         return 0
+
+    # Fold the new rate snapshot into the slowly-changing history. This is an
+    # accumulating side-record rather than an input to the page, so it runs
+    # outside the build steps and a failure is logged instead of stopping the
+    # page from shipping — losing one week of rate history is worth much less
+    # than a week of not publishing. Idempotent, so re-running is free.
+    if "mortgagerates" in changed or not RATE_TABLE.exists():
+        t0, started_hist = time.time(), datetime.now()
+        proc = run_script("rate_history.py")
+        ok = proc.returncode == 0
+        out = (proc.stdout if ok else proc.stderr).strip().splitlines() or [""]
+        print(f"  {'ratehistory':<13} {'ok' if ok else 'FAILED'}  "
+              f"{time.time() - t0:.1f}s  {out[0][:110]}")
+        steps.append(dict(run_id=run_id, source="ratehistory",
+                          status="ok" if ok else "failed",
+                          started_at=started_hist, finished_at=datetime.now(),
+                          source_hash=None, rows=None,
+                          message=None if ok else out[-1][:200]))
 
     rebuilt, build_error = False, None
     if changed or args.rebuild:

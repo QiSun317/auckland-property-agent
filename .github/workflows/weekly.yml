@@ -8,10 +8,12 @@
 # State, because a clean checkout has none:
 #   * data/raw  -> actions/cache. Bulky and fully re-derivable, so a cache miss
 #     costs about six minutes of refetching and nothing else. Never correctness.
-#   * data/state -> the ci-state branch. Tiny (24 KB) and NOT re-derivable: the
-#     accumulated market_snapshot and the per-source fetch times. Without the
-#     fetch times every run thinks every source is due and re-scrapes 217 pages
-#     for data that changes quarterly.
+#   * data/state -> the ci-state branch. Small and NOT re-derivable: the
+#     accumulated market_snapshot, the per-source fetch times, and the Delta
+#     table of carded rates. Without the fetch times every run thinks every
+#     source is due and re-scrapes 217 pages for data that changes quarterly;
+#     without the Delta table every week of rate history is thrown away, which
+#     is the thing it exists to stop.
 #
 # Publishing is skipped unless SITE_DEPLOY_KEY is set, so this workflow is
 # useful the moment it lands and starts publishing when the key is added. See
@@ -52,7 +54,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install duckdb
+      - run: pip install duckdb deltalake 'pyarrow>=21'
 
       # Bulky, re-derivable. Restored for speed; a miss just refetches.
       - name: Restore data/raw
@@ -68,7 +70,7 @@ jobs:
           if git ls-remote --exit-code --heads origin ci-state >/dev/null 2>&1; then
             git fetch --depth 1 origin ci-state
             git checkout FETCH_HEAD -- data/state
-            ls -l data/state
+            du -sh data/state; ls data/state
           else
             echo "no ci-state branch yet — first run, starting clean"
           fi
@@ -95,11 +97,13 @@ jobs:
           # Mirror the repo layout, so the restore step above is the exact
           # inverse of this. Flattening it to the branch root instead made the
           # first run push fine and the second run fail on checkout.
-          mkdir -p .state-push/data/state
-          cp data/state/history.duckdb.gz .state-push/data/state/
+          mkdir -p .state-push/data
+          # The whole directory: history.duckdb.gz plus the bank_rate Delta
+          # table, which is a directory of parquet and a transaction log.
+          cp -R data/state .state-push/data/
           cd .state-push
           git checkout -q -b ci-state
-          git add data/state/history.duckdb.gz
+          git add data/state
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "state after run $(date -u +%Y-%m-%d)"
@@ -143,7 +147,7 @@ jobs:
           path: |
             heatmap.html
             data/join_report.txt
-            data/state/history.duckdb.gz
+            data/state/**
             logs/pipeline.jsonl
           if-no-files-found: warn
           retention-days: 30

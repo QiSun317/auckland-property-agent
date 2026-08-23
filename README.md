@@ -14,6 +14,7 @@ python3 scripts/build_detail.py      # 空间关联 + 按 35 米网格聚合
 python3 scripts/build_map.py         # 生成 heatmap.html + suburb_prices.csv
 python3 scripts/build_db.py          # 装进 DuckDB（约 20 秒）
 python3 scripts/export_state.py      # 导出 CI 需要的 24 KB 状态
+python3 scripts/rate_history.py      # 把今天的利率折进 SCD2 历史
 ```
 
 查询：
@@ -257,6 +258,73 @@ deploy key 而不是 PAT：权限只限这一个仓库。
 不重建，也就没有页面可推——工作流把这个当成功，不当失败。
 利率的节奏因此设成 6 天而不是 7：定时任务早跑一小时就会看到 age=6 而跳过，
 那一周就白跑了。
+
+### 利率历史：Delta Lake 的 SCD2
+
+`fetch_mortgage_rates.py` 抓下的快照，**下一次抓取会把它整个覆盖掉**。每周跑一次，
+一年扔掉 52 份快照，而页面只能说"今天是多少"，永远说不出"它怎么走的"。
+`scripts/rate_history.py` 把每份快照折进一张累积表。
+
+**这是个类型 2 缓变维（SCD2）问题。** 快照只告诉你"此刻挂牌的是哪些"，
+历史必须从快照之间的差分推出来。一个 `(bank, product, term)` 会遇到三件事，
+其中**只有第二件应该产生新行**：
+
+| 发生了什么 | 应该做什么 |
+|---|---|
+| 利率没变 | **什么都不做**。银行几周不动价，一年的空跑不该把表撑大 |
+| 调息 | 关掉旧版本（`valid_to = 当天`），开一个新版本 |
+| 产品下架 | 关掉当前版本，**不开新的** |
+
+实现是三段 MERGE，顺序有意义：先关掉变价的（第 1 段），
+这样第 2 段就可以用普通的 `WHEN NOT MATCHED` —— 一个刚被关掉的键在目标表里已经没有当前行了，
+**看起来和全新产品一模一样**。第 3 段用 `WHEN NOT MATCHED BY SOURCE` 处理下架，
+并且用 `t.is_current` 兜住，否则每次运行都会把所有历史行重新关一遍。
+
+**自然键是重点。** 主键是 `(bank, product, term)`，不是位置序号。
+这个项目刚在 `market_snapshot` 上吃过位置序号的亏：`suburb_id` 是按名字排序的行号，
+LINZ 一改名 122 个 id 移位，三分之一的历史静默挂错。银行名和期限不会移位。
+
+#### 用 Delta 但不用 Databricks
+
+`delta-rs` 是纯 Python，**不需要 Spark**。这里要的是两样东西：
+`MERGE ON 自然键` 这个原语（不用自己发明再自己踩坑），和时间旅行。
+每天 500 行的量级不需要一个平台。什么时候才需要，见「方案」一节。
+
+```bash
+python3 scripts/rate_history.py            # 折进今天的快照
+python3 scripts/rate_history.py --show     # 当前挂牌利率
+python3 scripts/rate_history.py --series 1y   # 1 年期走势
+python3 scripts/rate_history.py --log      # Delta 提交日志
+```
+
+`--series` **默认只看五大行**，因为那是页面引用的口径。全部机构的最低 1 年期比它低
+0.8 个百分点（4.15% vs 4.95%），是几乎没人拿得到的利率——两个不同的统计量不能共用一个名字。
+要看全部加 `--all`。
+
+#### 三种转移都测过
+
+只有一份真实快照，所以"调息"和"下架"这两条路几个月内都碰不到真实数据——
+而它们正是整个设计的意义所在，"跑起来没报错"不算证据。
+`scripts/rate_history_test.py` 用一张临时表跑 5 天的合成快照，17 项检查：
+
+```
+day 2 — identical snapshot        no rows added / 报告 (0,0,0)
+day 3 — ANZ 1y 4.99 -> 5.25       一个新版本 / 旧版本按当天关闭 / 未变的行 valid_from 不动
+day 4 — BNZ 2y delisted           关闭但不删除 / 不开新版本
+day 5 — 下架后再跑同样的快照        仍然零变动   ← 兜住"每次重新关一遍"那个 bug
+time travel                        version 0 仍然读得到 4.99
+```
+
+#### 实测的一个语义细节
+
+8-21 抓了一次，8-23 又抓了一次，**利率没动**。表没有长大，`valid_from` 仍然是 `2026-08-21`——
+不是 `2026-08-23`。这是对的：**利率是从首次观测日起生效，不是从最后一次检查起。**
+一张记录"我们什么时候看过"的表没有价值，记录"它什么时候变过"的才有。
+
+#### 依赖
+
+`deltalake` + `pyarrow>=21`。pyarrow 低于 21 会**写得进、读不出**，
+报 `Repetition level histogram size mismatch`——脚本会直接告诉你这件事和修复命令。
 
 ### 上云的口子
 
@@ -682,6 +750,8 @@ ramp，红臂在 OKLCH 空间镜像每一档的明度与彩度，因此两侧感
 - [x] ~~点开 suburb 看简介 + 区内房价热力图~~
 - [x] ~~本地数据库 + 每月自动刷新~~
 - [x] ~~每周一 GitHub Actions 自动刷新并发布，不依赖笔记本是否开着~~
+- [x] ~~利率历史：Delta SCD2，攒起来而不是每周扔掉~~
+- [ ] 攒够几期后，在页面上画出利率走势（现在只有一个观测点）
 - [ ] 攒够几期 `market_snapshot` 后，在详情页加一条「我们自己观测到的」价格曲线
       （现在图上那条是数据源给的历史，不是我们采集的）
 - [x] ~~页面内嵌选房助手，预算优先 + 优缺点 + 自动打开对应热力图~~
