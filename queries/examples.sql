@@ -33,26 +33,37 @@ WHERE s.name = 'Remuera' AND cv IS NOT NULL
 GROUP BY 1 HAVING count(*) >= 25
 ORDER BY cv_median DESC;
 
--- 4. Which suburbs the 2021 -> 2024 revaluation hit hardest
+-- 4. Which suburbs the 2021 -> 2024 revaluation hit hardest.
+--    Two rounds means two rows of `valuation` per unit, so comparing them is a
+--    self-join on ru_id rather than two columns. Naming both dates as literals
+--    keeps each side an equality filter, and it runs in ~16 ms.
 SELECT s.name, count(*) AS units,
-       round(median((cv_2024 - cv_2021) / cv_2021::DOUBLE) * 100, 1) AS pct_change
-FROM rating_unit r JOIN suburb s USING (suburb_id)
-WHERE cv_2021 > 0 AND cv_2024 > 0
+       round(median((b.cv - a.cv) / a.cv::DOUBLE) * 100, 1) AS pct_change
+FROM valuation a
+JOIN valuation b ON a.ru_id = b.ru_id
+                AND a.valuation_date = DATE '2021-06-01'
+                AND b.valuation_date = DATE '2024-05-01'
+JOIN rating_unit r ON r.ru_id = a.ru_id
+JOIN suburb s USING (suburb_id)
+WHERE a.cv > 0 AND b.cv > 0
 GROUP BY 1 HAVING count(*) >= 300
 ORDER BY pct_change;
 
--- 5. Land value per m2 on ordinary freehold sections
-SELECT s.name, count(*) AS n, median(lv_2024 / land_area_m2)::INT AS lv_per_m2
-FROM rating_unit r JOIN suburb s USING (suburb_id)
-WHERE land_area_m2 BETWEEN 300 AND 1200 AND lv_2024 > 0
+-- 5. Land value per m2 on ordinary freehold sections.
+--    Only the latest round is wanted, which is what rating_unit_current is for.
+SELECT s.name, count(*) AS n, median(lv / land_area_m2)::INT AS lv_per_m2
+FROM rating_unit_current r JOIN suburb s USING (suburb_id)
+WHERE land_area_m2 BETWEEN 300 AND 1200 AND lv > 0
 GROUP BY 1 HAVING count(*) >= 200
 ORDER BY lv_per_m2 DESC;
 
--- 6. One property
-SELECT address, land_area_m2, cv_2021, cv_2024,
-       round((cv_2024 - cv_2021) / cv_2021::DOUBLE * 100, 1) AS pct_change
-FROM rating_unit
-WHERE address ILIKE '23 Coromandel Cres%';
+-- 6. One property, and what the revaluation did to it
+SELECT c.address, c.land_area_m2, a.cv AS cv_2021,
+       c.cv AS cv_current, c.valuation_date,
+       round((c.cv - a.cv) / a.cv::DOUBLE * 100, 1) AS pct_change
+FROM rating_unit_current c
+JOIN valuation a ON a.ru_id = c.ru_id AND a.valuation_date = DATE '2021-06-01'
+WHERE c.address ILIKE '23 Coromandel Cres%';
 
 -- 7. Everything known about one suburb, in one row
 SELECT * FROM suburb_overview WHERE name = 'Titirangi';
