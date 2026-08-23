@@ -85,10 +85,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -rf .state-push
           git init -q .state-push
-          cp data/state/history.duckdb.gz .state-push/
+          # Mirror the repo layout, so the restore step above is the exact
+          # inverse of this. Flattening it to the branch root instead made the
+          # first run push fine and the second run fail on checkout.
+          mkdir -p .state-push/data/state
+          cp data/state/history.duckdb.gz .state-push/data/state/
           cd .state-push
           git checkout -q -b ci-state
-          git add history.duckdb.gz
+          git add data/state/history.duckdb.gz
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "state after run $(date -u +%Y-%m-%d)"
