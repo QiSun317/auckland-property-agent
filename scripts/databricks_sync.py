@@ -29,7 +29,6 @@ from pathlib import Path
 ROOT = Path(os.environ.get("AKL_ROOT", Path(__file__).resolve().parent.parent))
 DATA = ROOT / "data"
 DB = Path(os.environ.get("AKL_DB", DATA / "auckland.duckdb"))
-RATE_TABLE = Path(os.environ.get("AKL_RATE_TABLE", DATA / "state" / "bank_rate"))
 
 CATALOG = os.environ.get("AKL_DBX_CATALOG", "workspace")
 SCHEMA = os.environ.get("AKL_DBX_SCHEMA", "auckland")
@@ -71,16 +70,12 @@ def export_parquet(out_dir):
         made.append((name, path, n))
     con.close()
 
-    # bank_rate lives in its own Delta table, not the DuckDB file. Reading it
-    # out and reloading it as a managed table is the whole point of this
-    # exercise — the SCD2 history moves to where the MERGE can run natively.
-    if RATE_TABLE.exists():
-        from deltalake import DeltaTable
-        import pyarrow.parquet as pq
-        t = DeltaTable(str(RATE_TABLE)).to_pyarrow_table()
-        path = out_dir / "bank_rate.parquet"
-        pq.write_table(t, path, compression="zstd")
-        made.append(("bank_rate", path, t.num_rows))
+    # bank_rate is deliberately NOT here. Everything above is derived data,
+    # rebuilt from data/raw every run, so CREATE OR REPLACE is the honest
+    # verb. bank_rate accumulates — it is the one table whose contents cannot
+    # be recomputed from the current snapshot — and replacing it would flatten
+    # every version it has recorded. databricks_rates.py merges into it
+    # instead.
     return made
 
 

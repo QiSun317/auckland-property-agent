@@ -152,6 +152,9 @@ jobs:
             exit 0
           fi
           python3 scripts/databricks_sync.py
+          # The one table that accumulates, so it is merged rather than
+          # replaced — and merged there rather than here.
+          python3 scripts/databricks_rates.py
 
       - name: Keep the outputs either way
         if: always()

@@ -1,0 +1,37 @@
+# The Databricks side: views, dashboard, and the source-agreement model.
+#
+# Separate from the weekly refresh on purpose. The weekly job's job is to get a
+# correct page published; this one reshapes what is already in the lakehouse and
+# trains on it. If it breaks, nothing a reader sees breaks with it.
+
+name: databricks build
+
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: "views | model | both"
+        default: "both"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install databricks-sdk mlflow scikit-learn numpy
+
+      - name: Views, saved queries, dashboard
+        if: inputs.what != 'model'
+        run: python3 scripts/databricks_views.py
+
+      - name: Source-agreement model
+        if: inputs.what != 'views'
+        run: python3 scripts/train_avm.py
