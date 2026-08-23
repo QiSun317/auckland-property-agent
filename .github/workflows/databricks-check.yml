@@ -1,0 +1,105 @@
+# Does the workspace answer, and what is actually in it?
+#
+# Run this first and after any credential change. Everything else that talks to
+# Databricks assumes the answers here, and a bad token fails in ways that look
+# like a dozen different bugs further down.
+#
+# The token never leaves the secret: the SDK reads DATABRICKS_HOST and
+# DATABRICKS_TOKEN from the environment itself, and nothing here prints them.
+
+name: databricks check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install databricks-sdk
+
+      - name: Who are we, and what can we see
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          from databricks.sdk import WorkspaceClient
+
+          host = os.environ.get("DATABRICKS_HOST", "")
+          if not host:
+              sys.exit("DATABRICKS_HOST is empty — is the secret set?")
+          print(f"host: {host}")
+
+          w = WorkspaceClient()
+
+          me = w.current_user.me()
+          print(f"\nauthenticated as: {me.user_name}")
+
+          print("\ncatalogs:")
+          cats = list(w.catalogs.list())
+          for c in cats:
+              print(f"  {c.name:<24} {c.catalog_type}")
+          if not cats:
+              print("  (none — Unity Catalog may not be provisioned yet)")
+
+          print("\nschemas in the first non-system catalog:")
+          target = next((c for c in cats if c.name not in ("system", "samples")), None)
+          if target:
+              for s in w.schemas.list(catalog_name=target.name):
+                  print(f"  {target.name}.{s.name}")
+
+          print("\nSQL warehouses:")
+          whs = list(w.warehouses.list())
+          for wh in whs:
+              print(f"  {wh.name:<24} {wh.cluster_size:<12} state={wh.state}")
+          if not whs:
+              print("  (none — one has to be created before SQL will run)")
+
+          print("\nvolumes we could upload raw files into:")
+          if target:
+              found = False
+              for s in w.schemas.list(catalog_name=target.name):
+                  for v in w.volumes.list(catalog_name=target.name, schema_name=s.name):
+                      print(f"  /Volumes/{target.name}/{s.name}/{v.name}")
+                      found = True
+              if not found:
+                  print("  (none yet — we create one)")
+          PY
+
+      - name: What the plan needs, and whether it is here
+        run: |
+          python3 - <<'PY'
+          from databricks.sdk import WorkspaceClient
+          w = WorkspaceClient()
+          checks = []
+
+          def note(label, ok, detail=""):
+              checks.append((label, ok, detail))
+
+          cats = [c.name for c in w.catalogs.list()]
+              # a writable catalog is where every table in the plan lands
+          usable = [c for c in cats if c not in ("system", "samples")]
+          note("a writable catalog", bool(usable), ", ".join(usable) or "none found")
+
+          whs = list(w.warehouses.list())
+          note("a SQL warehouse", bool(whs),
+               ", ".join(f"{x.name} ({x.cluster_size})" for x in whs) or "none found")
+
+          try:
+              list(w.jobs.list())
+              note("jobs API reachable", True)
+          except Exception as e:
+              note("jobs API reachable", False, str(e)[:80])
+
+          print()
+          for label, ok, detail in checks:
+              print(f"  {'ok  ' if ok else 'todo'}  {label:<24} {detail}")
+          PY
