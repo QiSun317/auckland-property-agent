@@ -46,6 +46,8 @@ jobs:
     timeout-minutes: 45
     env:
       SITE_DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +56,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install duckdb deltalake 'pyarrow>=21'
+      - run: pip install duckdb deltalake 'pyarrow>=21' databricks-sdk
 
       # Bulky, re-derivable. Restored for speed; a miss just refetches.
       - name: Restore data/raw
@@ -138,6 +140,18 @@ jobs:
         run: |
           echo "SITE_DEPLOY_KEY is not set, so the page was built but not published."
           echo "The built page is attached to this run as an artifact."
+
+      # After publishing, deliberately. Free Edition compute cannot reach the
+      # sites this project scrapes, so Databricks is a destination rather than
+      # a dependency — and the page should never wait on it, or fail with it.
+      - name: Sync to Unity Catalog
+        if: env.DATABRICKS_HOST != ''
+        run: |
+          if [ ! -f data/auckland.duckdb ]; then
+            echo "nothing was rebuilt this week — nothing new to sync"
+            exit 0
+          fi
+          python3 scripts/databricks_sync.py
 
       - name: Keep the outputs either way
         if: always()
