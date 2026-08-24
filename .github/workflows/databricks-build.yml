@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       what:
-        description: "views | model | quality | all"
+        description: "views | model | quality | docs | all"
         default: "all"
 
 jobs:
@@ -37,6 +37,12 @@ jobs:
         run: |
           python3 scripts/databricks_quality.py
           python3 scripts/databricks_quality.py --history
+
+      - name: Column comments and lineage
+        if: inputs.what == 'docs' || inputs.what == 'all'
+        run: |
+          python3 scripts/databricks_lineage.py
+          python3 scripts/databricks_lineage.py --lineage
 
       - name: Source-agreement model
         if: inputs.what == 'model' || inputs.what == 'all'
