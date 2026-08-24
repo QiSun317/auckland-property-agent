@@ -446,6 +446,13 @@
     .calcin, .calcrows { grid-template-columns:1fr; }
   }
 
+  .prov { border-collapse:collapse; font-size:12px; margin:0 0 4px;
+          font-variant-numeric:tabular-nums; }
+  .prov td { padding:3px 16px 3px 0; border-bottom:1px solid var(--hair); }
+  .prov td:first-child { color:var(--ink-2); }
+  .prov td:last-child { color:var(--muted); }
+  .stale { color:#d03b3b; margin:8px 0 0; }
+
   .notes { margin-top:22px; font-size:12.5px; color:var(--ink-2); line-height:1.7; }
   .notes h2 { font-size:13px; margin:0 0 6px; color:var(--ink); font-weight:650; }
   .notes ul { margin:0; padding-left:18px; }
@@ -2782,18 +2789,65 @@ function changesLine() {
   return bits;
 }
 
+// The source states a month, and the page has to say it in whichever language
+// is on screen. It used to read DATA.asAtEn on the English branch — a key that
+// was never in the payload — so English readers saw a hardcoded "June 2026"
+// that would have stayed there through every refresh.
+function monthLabel(iso) {
+  const [y, m] = iso.split('-');
+  return LANG === 'zh' ? `${y} 年 ${+m} 月`
+    : new Date(+y, +m - 1, 1).toLocaleDateString('en-NZ',
+        { month: 'long', year: 'numeric' });
+}
+
+const DAYS_STALE = 14;      // a weekly job, plus room for one missed run
+const daysSince = iso => Math.floor((Date.now() - Date.parse(iso + 'T00:00:00')) / 864e5);
+
+const SOURCE_L = {
+  prices: ['房价', 'Prices'], valuations: ['政府估价', 'Council valuations'],
+  boundaries: ['郊区边界', 'Suburb boundaries'], localboards: ['行政区划', 'Local boards'],
+  wikipedia: ['简介', 'Intros'], mortgagerates: ['房贷利率', 'Mortgage rates'],
+};
+
+// When each source was last pulled, and when this page was built from them.
+// A page that refreshes itself weekly and never says when is a page a reader
+// has no way to date.
+function provenance() {
+  const b = DATA.built || {};
+  const src = Object.entries(b.sources || {})
+    .filter(([k]) => SOURCE_L[k])
+    .sort((x, y) => (x[1] < y[1] ? 1 : -1));
+  if (!src.length) return '';
+  const newest = Math.min(...src.map(([, d]) => daysSince(d)));
+  const rows = src.map(([k, d]) =>
+    `<tr><td>${L(SOURCE_L[k][0], SOURCE_L[k][1])}</td><td>${d}</td>` +
+    `<td>${L(`${daysSince(d)} 天前`, `${daysSince(d)}d ago`)}</td></tr>`).join('');
+  const built = (b.at || '').replace('T', ' ');
+  return `<h2>${L('数据是什么时候取的', 'When this was fetched')}</h2>
+    <p style="margin:0 0 8px">${L(
+      `本页构建于 <b>${built}</b>。每周一自动重跑一次，各源按自己的节奏抓 —— ` +
+      `所以下面的日期本来就不该相同，房价季度级刷新，利率几天一变。`,
+      `This page was built at <b>${built}</b>. It rebuilds itself every Monday and each ` +
+      `source is pulled on its own cadence, so these dates are not meant to match: ` +
+      `prices refresh quarterly, rates move within days.`)}</p>
+    <table class="prov"><tbody>${rows}</tbody></table>
+    ${newest > DAYS_STALE ? `<p class="stale">${L(
+      `最近一次成功抓取已经是 ${newest} 天前 —— 定时任务可能停了，页面上的数字请当作过期处理。`,
+      `The most recent successful fetch was ${newest} days ago — the scheduled job may have stopped, so treat these figures as stale.`)}</p>` : ''}`;
+}
+
 function subCopy() {
   return LANG === 'zh'
-    ? `按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），数据截至 <b>${DATA.asAt}</b>。
+    ? `按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），数据截至 <b>${monthLabel(DATA.asAt)}</b>。
        颜色像气温图：<b>越红越贵，越蓝越便宜</b>，灰白色 = 接近全区中位水平。
        <b>点击任一郊区</b>可查看该区简介与区内逐街区的房价热力图。`
-    : `<b>Average house value</b> by suburb, as at <b>${DATA.asAtEn || 'June 2026'}</b>. The colour reads like a
+    : `<b>Average house value</b> by suburb, as at <b>${monthLabel(DATA.asAt)}</b>. The colour reads like a
        temperature map: <b>redder is dearer, bluer is cheaper</b>, near-neutral means close to the regional median.
        <b>Click any suburb</b> for an intro and a block-by-block heat map inside it.`;
 }
 
 function fillStats() {
-  $('#notes').innerHTML = notesHtml();
+  $('#notes').innerHTML = notesHtml() + provenance();
   $('#subCopy').innerHTML = subCopy();
   const set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
   set('#saleMed', fmt(DATA.regionSaleMedian));

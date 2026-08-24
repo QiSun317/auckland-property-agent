@@ -12,6 +12,7 @@ import os
 import math
 import re
 import unicodedata
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import median
 
@@ -58,8 +59,49 @@ RAMP_DARK = ["#519fff", "#388df5", "#427ac1", "#46658e", "#4a4a47",
 # Regional context figure quoted by the same source (REINZ-style sale median,
 # a different measure from the per-suburb automated valuations).
 REGION_SALE_MEDIAN = 980000
-AS_AT = "2026 年 6 月"
-LAST_UPDATED = "2026-04-16"
+
+# The source's own dates used to be constants here, and the page kept showing
+# them long after they stopped being true — a scheduled job that refreshes the
+# data weekly but not the date printed beside it is worse than no date at all.
+# Both are carried in the records themselves, so both are read from there.
+EXCEL_EPOCH = date(1899, 12, 30)     # the serial base these dates use
+
+
+def source_dates(prices):
+    """When the source says its figures are as at, and when it last published.
+
+    max_date is an Excel serial: 46174 -> 2026-06-01, corroborated by
+    one_year_ago_date and two_year_ago_date sitting exactly 365 and 730 days
+    behind it. Different suburbs carry different max_dates, so the newest is
+    the dataset's basis.
+    """
+    serials = [p["max_date"] for p in prices if p.get("max_date")]
+    published = sorted({p["last_updated"] for p in prices if p.get("last_updated")})
+    if not serials or not published:
+        raise SystemExit("the price records carry no max_date or last_updated — "
+                         "the source changed shape; fix this rather than "
+                         "shipping a date the page will state as fact")
+    as_at = EXCEL_EPOCH + timedelta(days=max(serials))
+    # A serial that decodes to last century or next is a decoding error, and a
+    # wrong date printed confidently is the failure worth preventing.
+    if not date(2000, 1, 1) <= as_at <= date.today() + timedelta(days=400):
+        raise SystemExit(f"max_date decodes to {as_at}, which cannot be right")
+    return as_at.isoformat(), published[-1]
+
+
+def fetch_times():
+    """When each source was last pulled. Already recorded per run; it has just
+    never been shown to the reader, who has no other way to tell whether the
+    page in front of them is a week or a year old."""
+    con = duckdb.connect(str(DATA / "auckland.duckdb"), read_only=True)
+    try:
+        rows = con.execute("""
+            SELECT source, max(finished_at)::DATE::TEXT
+            FROM pipeline_step WHERE status IN ('ok', 'unchanged')
+            GROUP BY 1 ORDER BY 1""").fetchall()
+    finally:
+        con.close()
+    return {s: d for s, d in rows}
 
 # Opes records that duplicate an area already covered by its constituent
 # suburbs, or that have no polygon in the LINZ layer.
@@ -325,6 +367,8 @@ def main():
     # join report that no longer match the page.
     rates = mortgage_rates()
     changes = recent_changes()
+    as_at, last_updated = source_dates(prices)
+    fetched = fetch_times()
 
     # Geography and typical section size come from the database, where the
     # spatial joins already happened.
@@ -466,8 +510,10 @@ def main():
         "metresPerUnit": round(111320 * math.cos(math.radians(-36.9)) / scale_x, 3),
         "midPrice": mid,
         "regionSaleMedian": REGION_SALE_MEDIAN,
-        "asAt": AS_AT,
-        "lastUpdated": LAST_UPDATED,
+        "asAt": as_at,
+        "lastUpdated": last_updated,
+        "built": {"at": datetime.now().isoformat(timespec="minutes"),
+                  "sources": fetched},
         "rampLight": ramp_lut(RAMP_LIGHT),
         "rampDark": ramp_lut(RAMP_DARK),
         "ref": reference_stats(rows),
@@ -530,6 +576,7 @@ def main():
                 "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
                 "repayment", "councilRates", "calcCard", "renderCalcOut",
                 "seedCalc", "calcPanel", "readIntent", "renderAssess", "changesLine",
+                "provenance", "monthLabel",
                 "renderCompare", "explainAnswer", "assessBlock"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]
