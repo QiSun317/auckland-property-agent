@@ -463,6 +463,58 @@ python3 scripts/eval_agent.py --no-log
 利率涨是坏消息。所以那两个类叫 `.worse` / `.better` 而不是复用 `.up` / `.down`：
 同名类在同一页面上意思相反，是下一次改动搞反它的必经之路。）
 
+### 数据质量：从"门口的通过/不通过"变成"随时间测量"
+
+流水线的闸门是**二值**的：新文件过了就替换，没过就沿用上一版。这是对的行为，
+也确实拦下过真实的事故。但它看不见**慢性衰退**——地址逐渐丢掉后缀、带坐标的地块比例
+一年里从 99% 滑到 94%：没有任何一次运行会触发阈值，也就永远不会有人说一句。
+
+`databricks_quality.py` 做两件事，按价值排序：
+
+1. **每次运行追加一行质量画像**。带 CV 的计税单元占比、落进边界的占比、有价格的郊区占比……
+   记成时间序列，**滑坡才看得出来是滑坡**。
+2. **Delta CHECK 约束**，写在不变量上。声明式、引擎在写入时强制，
+   而且它陈述的是**规则本身**，不是检查规则的代码。
+
+首次运行的实测（6 条约束全部通过，说明现有数据满足这些不变量）：
+
+| 指标 | 值 |
+|---|---|
+| `ru_with_suburb` | 0.9944 |
+| `ru_with_land_area` | **0.7003** ← 三成的计税单元没有地块面积（cross-lease 公寓） |
+| `valuations_with_cv` | 1.0 |
+| `suburbs_priced` | 0.7168 |
+| `source_agreement_median` | **0.987** ← 两个独立价格源的比值中位数 |
+
+Lakehouse Monitor 也建成了（Free Edition 允许），它是第 1 条的官方版本。
+
+### 口径写在列上，不写在 README 里
+
+这个项目跑得最久的主题就是**「这个数字是什么口径」**。而所有这些说明都躺在一个
+markdown 文件里——**没有人在写查询的时候会去读它**。
+
+Unity Catalog 的列注释会**跟着数据走**：schema 浏览器里有、自动补全里有、
+任何做内省的工具里都有。所以口径搬到它们所描述的那一列上。
+
+一个人敲下 `SELECT avg_house_value`，看到的是：
+
+> Average of automated valuations across all housing stock. **NOT a sale price**
+> and not comparable to a sale median: the regional REINZ sale median was
+> $980,000 over the same period while the median of these is $1,165,950.
+
+**在唯一有用的那一刻被告知。**
+
+实测的一个附带收获：注释**自动传播到了建在其上的视图**——`suburb_overview` 上的口径
+出现在了 `source_agreement` 上。口径跟着数据走，不用重复维护。
+
+（视图的列注释必须写在**视图定义里**，`ALTER VIEW ALTER COLUMN COMMENT` 会被拒绝。
+第一版就是这么写的，于是最重要的那 5 条全被跳过了。而我花了两轮才发现，
+是因为 `sql()` 助手只打印 `error.message`——message 恰好为空时输出就是
+`SQL failed: ` 后面什么都没有。**报错却不说原因是最难查的那种。**现在它会把
+state、error_code、message 有哪个说哪个。）
+
+血缘不用建，UC 在查询运行时自己记录；缺的只是一个读它的地方，`--lineage` 就是。
+
 ### 上云的口子
 
 `scripts/` 里没有任何 macOS 专属代码，路径走 `AKL_ROOT` / `AKL_RAW_DIR` /
