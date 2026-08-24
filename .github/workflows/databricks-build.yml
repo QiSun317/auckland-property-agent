@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
     inputs:
       what:
-        description: "views | model | both"
-        default: "both"
+        description: "views | model | quality | all"
+        default: "all"
 
 jobs:
   build:
@@ -29,9 +29,15 @@ jobs:
       - run: pip install databricks-sdk mlflow scikit-learn numpy
 
       - name: Views, saved queries, dashboard
-        if: inputs.what != 'model'
+        if: inputs.what == 'views' || inputs.what == 'all'
         run: python3 scripts/databricks_views.py
 
+      - name: Data quality profile and constraints
+        if: inputs.what == 'quality' || inputs.what == 'all'
+        run: |
+          python3 scripts/databricks_quality.py
+          python3 scripts/databricks_quality.py --history
+
       - name: Source-agreement model
-        if: inputs.what != 'views'
+        if: inputs.what == 'model' || inputs.what == 'all'
         run: python3 scripts/train_avm.py
