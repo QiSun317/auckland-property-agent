@@ -12,7 +12,7 @@ import os
 import math
 import re
 import unicodedata
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
 
@@ -512,7 +512,11 @@ def main():
         "regionSaleMedian": REGION_SALE_MEDIAN,
         "asAt": as_at,
         "lastUpdated": last_updated,
-        "built": {"at": datetime.now().isoformat(timespec="minutes"),
+        # UTC with an offset, not a naive local clock. A build on this laptop
+        # stamped 13:29 and the next one in CI stamped 01:35, six minutes
+        # later — the same instant twelve hours apart on the page, and no way
+        # for a reader to tell which. The page renders it in their own zone.
+        "built": {"at": datetime.now(timezone.utc).isoformat(timespec="minutes"),
                   "sources": fetched},
         "rampLight": ramp_lut(RAMP_LIGHT),
         "rampDark": ramp_lut(RAMP_DARK),

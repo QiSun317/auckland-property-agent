@@ -2822,7 +2822,13 @@ function provenance() {
   const rows = src.map(([k, d]) =>
     `<tr><td>${L(SOURCE_L[k][0], SOURCE_L[k][1])}</td><td>${d}</td>` +
     `<td>${L(`${daysSince(d)} 天前`, `${daysSince(d)}d ago`)}</td></tr>`).join('');
-  const built = (b.at || '').replace('T', ' ');
+  // Rendered in whoever is reading's own timezone. The payload carries UTC
+  // with an offset; a bare wall-clock time from whichever machine happened to
+  // build it is not a fact about anything.
+  const built = b.at
+    ? new Date(b.at).toLocaleString(LANG === 'zh' ? 'zh-CN' : 'en-NZ',
+        { dateStyle: 'medium', timeStyle: 'short' })
+    : '';
   return `<h2>${L('数据是什么时候取的', 'When this was fetched')}</h2>
     <p style="margin:0 0 8px">${L(
       `本页构建于 <b>${built}</b>。每周一自动重跑一次，各源按自己的节奏抓 —— ` +
