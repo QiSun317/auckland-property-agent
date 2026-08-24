@@ -74,6 +74,40 @@ jobs:
                   print("  (none yet — we create one)")
           PY
 
+      # Which credentials this workspace will actually accept. A stored PAT
+      # is the weakest of them and the one we are using; this says whether
+      # anything better is reachable.
+      - name: What kinds of credential are available
+        run: |
+          python3 - <<'PY'
+          from databricks.sdk import WorkspaceClient
+          w = WorkspaceClient()
+          cfg = w.config
+          print(f"authenticating with: {cfg.auth_type}")
+
+          def probe(label, fn):
+              try:
+                  n = len(list(fn()))
+                  print(f"  yes   {label:<34} ({n} found)")
+              except Exception as e:
+                  print(f"  no    {label:<34} {str(e).splitlines()[0][:90]}")
+
+          probe("service principals (workspace)", lambda: w.service_principals.list())
+          probe("users (SCIM)", lambda: w.users.list())
+          probe("groups", lambda: w.groups.list())
+          probe("token management", lambda: w.token_management.list())
+          probe("own tokens", lambda: w.tokens.list())
+          try:
+              import databricks.sdk.core as c
+              print("\n  auth methods the SDK would try, in order:")
+              for m in c.DefaultCredentials().__class__.__mro__[:1]:
+                  pass
+              from databricks.sdk.credentials_provider import DefaultCredentials
+              print("   ", ", ".join(p.auth_type() for p in DefaultCredentials()._auth_providers))
+          except Exception as e:
+              print("  (could not enumerate providers:", str(e)[:80], ")")
+          PY
+
       - name: What the plan needs, and whether it is here
         run: |
           python3 - <<'PY'
