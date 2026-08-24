@@ -56,7 +56,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install duckdb deltalake 'pyarrow>=21' databricks-sdk
+      - run: pip install duckdb deltalake 'pyarrow>=21' databricks-sdk mlflow
+      - run: npm --prefix evals install --no-audit --no-fund
 
       # Bulky, re-derivable. Restored for speed; a miss just refetches.
       - name: Restore data/raw
@@ -115,6 +116,18 @@ jobs:
           git push -q --force \
             "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
             ci-state
+
+      # Before publishing, and allowed to fail the run. These cases are the
+      # ways the agent has actually been wrong; if one of them comes back,
+      # the verification the page relies on is not working and a page whose
+      # figures are unverified should not go out.
+      - name: Agent gate suite
+        run: |
+          if [ ! -f heatmap.html ]; then
+            echo "nothing was rebuilt this week — no page to check"
+            exit 0
+          fi
+          python3 scripts/eval_agent.py
 
       - name: Publish the page
         if: env.SITE_DEPLOY_KEY != ''

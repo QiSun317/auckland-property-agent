@@ -2568,7 +2568,13 @@ const SAYS_DOWN = /下跌|跌了|跌幅|下降|回调|下调|减少|fell|fallen|
 function figuresCheckOut(text, facts) {
   if (!facts) return false;
   const nums = Object.values(facts).filter(v => typeof v === 'number');
-  const tolFor = v => (v >= 1000 ? Math.max(5000, v * 0.02) : 0.6);
+  // 0.15, not 0.6. The tolerance exists to absorb rounding — one decimal
+  // place is at most 0.05 out — and 0.6 was wide enough to reach the next
+  // field along. Remuera yields 2.0% and grows 6.3%, so an invented "租金回报
+  // 5.8%" landed within 0.6 of the growth figure and passed as if it had been
+  // copied from the row. A checker that does not care which field a number
+  // came from has to be tight enough that it cannot arrive at a different one.
+  const tolFor = v => (v >= 1000 ? Math.max(5000, v * 0.02) : 0.15);
 
   for (const m of text.matchAll(/(\$\s?)?(\d[\d,]*(?:\.\d+)?)\s*([kKmM]\b|%|公里|km)?/g)) {
     const unit = m[3] || '';

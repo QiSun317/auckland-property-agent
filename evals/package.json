@@ -1,0 +1,6 @@
+{
+  "name": "auckland-agent-evals",
+  "private": true,
+  "description": "jsdom, so the gates can be exercised outside a browser",
+  "dependencies": { "jsdom": "^25.0.0" }
+}

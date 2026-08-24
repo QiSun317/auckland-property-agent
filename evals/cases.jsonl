@@ -1,0 +1,28 @@
+{"id":"intent-shortlist-zh","kind":"intent","input":"预算 110 万，三房，南区","expect":"shortlist","why":"the original shape, must not regress"}
+{"id":"intent-assess-zh","kind":"intent","input":"Remuera 怎么样","expect":"assess","why":"a named suburb is a question about it, not a request to have it recommended back"}
+{"id":"intent-assess-en","kind":"intent","input":"What is Papakura like?","expect":"assess","why":"same in English"}
+{"id":"intent-compare-zh","kind":"intent","input":"Papakura 和 Manurewa 哪个好","expect":"compare","why":"two names is a comparison"}
+{"id":"intent-compare-en","kind":"intent","input":"Papakura or Manurewa?","expect":"compare","why":"same in English, with no comparison verb"}
+{"id":"intent-explain-rank-zh","kind":"intent","input":"哪个区涨得最快","expect":"explain","why":"an aggregate the page computes itself"}
+{"id":"intent-explain-rank-en","kind":"intent","input":"Which suburbs grew fastest?","expect":"explain","why":"'grew fastest' did not match a regex written as 'fastest grow'"}
+{"id":"intent-explain-zone-zh","kind":"intent","input":"东区大概多少钱","expect":"explain","why":"AGG_WORDS had 多少个 but not 多少钱, so this fell through to a shortlist"}
+{"id":"intent-explain-zone-en","kind":"intent","input":"How much is the East?","expect":"explain","why":"was refused as off-topic for want of a budget or a suburb name"}
+{"id":"intent-budget-not-explain","kind":"intent","input":"预算 110 万左右，能买哪里","expect":"shortlist","why":"a stated budget means somewhere to buy, not a statistic, even though 多少-shaped words appear"}
+{"id":"parse-zone-en-south","kind":"parse","input":"$1.1m, 3 bedrooms, south","expect":{"budget":1100000,"beds":3,"zones":["南区"]},"why":"bare English zone names were dropped: 157 suburbs came back where Chinese returned 35"}
+{"id":"parse-zone-zh-east","kind":"parse","input":"东区，预算 150 万","expect":{"budget":1500000,"zones":["东区"]},"why":"the 东区 miss that first motivated sending the model the whole table"}
+{"id":"parse-westmere-not-west","kind":"parse","input":"Westmere","expect":{"zones":[],"suburbs":["Westmere"]},"why":"includes('west') matches inside Westmere — the reason bare zone words were excluded"}
+{"id":"parse-cbd-as-reference","kind":"parse","input":"上班在市中心，预算 120 万","expect":{"budget":1200000,"zones":[]},"why":"the CBD as a reference point, not a destination"}
+{"id":"figures-exact","kind":"figures","suburb":"Remuera","field":"entry_price","template":"入门价 $%s","expect":true,"why":"a figure copied from the row must pass"}
+{"id":"figures-invented-dollar","kind":"figures","suburb":"Remuera","text":"入门价 $820,000","expect":false,"why":"an invented dollar amount"}
+{"id":"figures-invented-pct","kind":"figures","suburb":"Remuera","text":"租金回报 5.8%","expect":false,"why":"an invented percentage"}
+{"id":"figures-invented-bare","kind":"figures","suburb":"Remuera","text":"entry_price为 820000","expect":false,"why":"bare numbers with no $ slipped through the first version of the checker"}
+{"id":"figures-year-allowed","kind":"figures","suburb":"Remuera","text":"2024 年的估价","expect":true,"why":"a year is not a claim about this suburb"}
+{"id":"figures-small-int-allowed","kind":"figures","suburb":"Remuera","text":"3 房的房子","expect":true,"why":"bedroom counts are not figures to verify"}
+{"id":"claims-school","kind":"claims","suburb":"Remuera","text":"这里是极负盛名的顶级学区","expect":false,"why":"said immediately after the page stated it has no school data"}
+{"id":"claims-crime","kind":"claims","suburb":"Remuera","text":"治安非常好","expect":false,"why":"no crime data in the dataset"}
+{"id":"claims-ethnicity","kind":"claims","suburb":"Remuera","text":"华人很多","expect":false,"why":"no ethnicity data in the dataset"}
+{"id":"claims-flood","kind":"claims","suburb":"Remuera","text":"没有洪水风险","expect":false,"why":"no hazard data in the dataset"}
+{"id":"claims-plain-fact","kind":"claims","suburb":"Remuera","text":"离市中心 5.2 km，成交活跃","expect":true,"why":"readable straight off the fields"}
+{"id":"refuse-off-topic","kind":"refuse","input":"帮我写一段 python 代码","expect":true,"why":"nothing to do with choosing where to live"}
+{"id":"refuse-not-school-budget","kind":"refuse","input":"预算 200 万想要学区房","expect":false,"why":"a real property question with one dimension it cannot answer — was refused outright"}
+{"id":"refuse-not-plain-suburb","kind":"refuse","input":"Remuera 怎么样","expect":false,"why":"a named suburb carries no budget and must still be answered"}

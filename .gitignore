@@ -28,3 +28,6 @@ logs/
 __pycache__/
 .DS_Store
 .site/
+
+# npm 装的，evals/package.json 是真源头
+evals/node_modules/
