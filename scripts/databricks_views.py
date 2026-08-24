@@ -87,6 +87,36 @@ VIEWS = {
         GROUP BY 1, 2""",
 }
 
+# The caveats that change the answer if you get them wrong. On the view rather
+# than in a markdown file, because this is where someone writing
+# SELECT avg_house_value will actually be looking.
+VIEW_COLUMN_COMMENTS = {
+    "suburb_overview": {
+        "avg_house_value":
+            "Average of automated valuations across all housing stock. NOT a "
+            "sale price and not comparable to a sale median: the regional "
+            "REINZ sale median was $980,000 over the same period while the "
+            "median of these is $1,165,950. One weights by what sold, the "
+            "other weights every suburb equally over all stock.",
+        "cv_median":
+            "Median council capital value across ALL rating units, including "
+            "apartments, retail and industrial land. Apartment-dense and "
+            "industrial suburbs read far below a residential interpretation.",
+        "entry_price":
+            "25th percentile of council capital values, i.e. what it costs to "
+            "get in. Not the average, and the gap is the point: East Tamaki "
+            "averages $1.07m and starts at $790,000.",
+        "value_to_cv":
+            "Commercial AVM divided by median council CV. The only "
+            "cross-check between two independent price sources. Region-wide "
+            "the median is about 1.0, which says they agree overall and "
+            "nothing about where they do not.",
+        "population":
+            "From the market data source, not a census. Missing where the "
+            "source does not cover the suburb.",
+    },
+}
+
 # Saved queries so the dashboard tiles, and anyone poking around in the SQL
 # editor, start from the same place.
 QUERIES = {
@@ -171,7 +201,18 @@ def main():
     print(f"warehouse: {wh.name}\n")
 
     for name, body in VIEWS.items():
-        sql(w, wh.id, f"CREATE OR REPLACE VIEW {NS}.{name} AS {body}")
+        # A view takes its column comments in its own definition — ALTER VIEW
+        # ALTER COLUMN COMMENT is rejected — so the contract is declared with
+        # the view rather than bolted on afterwards.
+        cols = VIEW_COLUMN_COMMENTS.get(name)
+        spec = ""
+        if cols:
+            got = sql(w, wh.id, f"SELECT * FROM ({body}) LIMIT 0")
+            names = [c.name for c in got.manifest.schema.columns]
+            spec = " (" + ", ".join(
+                f"{c} COMMENT '{cols[c]}'" if c in cols else c
+                for c in names) + ")"
+        sql(w, wh.id, f"CREATE OR REPLACE VIEW {NS}.{name}{spec} AS {body}")
         n = sql(w, wh.id, f"SELECT count(*) FROM {NS}.{name}").result.data_array[0][0]
         print(f"  view  {NS}.{name:<20} {int(n):>6,} rows")
 

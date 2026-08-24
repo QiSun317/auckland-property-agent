@@ -87,8 +87,14 @@ def sql(w, warehouse_id, statement):
         time.sleep(2)
         r = w.statement_execution.get_statement(r.statement_id)
     if r.status.state != StatementState.SUCCEEDED:
-        sys.exit(f"SQL failed: {r.status.error.message if r.status.error else r.status.state}\n"
-                 f"  statement: {statement[:200]}")
+        # Say everything known. The first version printed only error.message,
+        # and a failure whose message happened to be empty came out as
+        # "SQL failed: " with nothing after it — the least useful error there is.
+        err = r.status.error
+        detail = " / ".join(str(x) for x in
+                            (r.status.state, getattr(err, "error_code", None),
+                             getattr(err, "message", None)) if x)
+        sys.exit(f"SQL failed: {detail}\n  statement: {statement[:200]}")
     return r
 
 

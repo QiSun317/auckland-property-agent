@@ -53,31 +53,9 @@ TABLE_COMMENTS = {
                     "visible; a pass/fail gate cannot see one.",
 }
 
-# The ones where getting the basis wrong changes the answer.
+# Base-table columns only. The view columns are declared with the view in
+# databricks_views.py, because a view will not take ALTER COLUMN COMMENT.
 COLUMN_COMMENTS = {
-    ("suburb_overview", "avg_house_value"):
-        "Average of automated valuations across all housing stock in the "
-        "suburb. NOT a sale price and not comparable to a sale median: the "
-        "regional REINZ sale median was $980,000 over the same period while "
-        "the median of these is $1,165,950. One weights by what actually "
-        "sold, the other weights every suburb equally over all stock.",
-    ("suburb_overview", "cv_median"):
-        "Median council capital value across ALL rating units in the suburb, "
-        "including apartments, retail and industrial land. Apartment-dense and "
-        "industrial suburbs read far below a residential interpretation — "
-        "Penrose is the standing example.",
-    ("suburb_overview", "entry_price"):
-        "25th percentile of council capital values — what it costs to get in. "
-        "Not the average, and the gap is the point: East Tamaki averages "
-        "$1.07m and starts at $790,000.",
-    ("suburb_overview", "value_to_cv"):
-        "Commercial AVM divided by median council CV. The only cross-check "
-        "this dataset has between two independent price sources. Region-wide "
-        "the median is about 1.0, which says they agree overall and says "
-        "nothing about where they do not.",
-    ("suburb_overview", "population"):
-        "From the market data source, not a census. Missing for suburbs the "
-        "source does not cover.",
     ("valuation", "cv"):
         "Capital value, the council's assessment of land plus improvements at "
         "the valuation date. Set on a three-year cycle, so it is a valuation "
