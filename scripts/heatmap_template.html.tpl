@@ -47,6 +47,24 @@
   .tile .v { font-size:22px; font-weight:600; letter-spacing:-.02em; }
   .tile .m { font-size:12px; color:var(--ink-2); margin-top:2px; }
 
+  #changed {
+    display:flex; gap:9px; align-items:baseline; flex-wrap:wrap;
+    font-size:12.5px; color:var(--ink-2); margin:-6px 0 16px;
+    padding:9px 12px; border-left:3px solid var(--accent);
+    background:var(--surface); border-radius:0 6px 6px 0;
+  }
+  #changed[hidden] { display:none; }
+  #changed b { color:var(--ink); font-weight:600; }
+  #changed .lab {
+    font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--accent); font-weight:650; flex:0 0 auto;
+  }
+  /* Not .up/.down — those already mean "house value rose" elsewhere on this
+     page and are coloured the other way round. A rate going up is bad news;
+     the same class name meaning the opposite thing a screen apart is how a
+     later edit gets it backwards. */
+  #changed .worse { color:#d03b3b; } #changed .better { color:#0ca30c; }
+
   .bar {
     display:flex; flex-wrap:wrap; gap:10px; align-items:center;
     margin-bottom:12px;
@@ -453,6 +471,7 @@
   </p>
 
   <div class="tiles" id="tiles"></div>
+  <div id="changed" hidden></div>
 
   <div class="bar">
     <div class="seg" role="group" data-zh-aria="配色标准" data-en-aria="Colour scale">
@@ -2741,6 +2760,28 @@ function notesHtml() {
   `;
 }
 
+// What moved since last week. Shown only when something did — a line reading
+// "no change" every week for months is noise, and the notes explain the
+// mechanism for anyone who wonders why it is sometimes absent.
+function changesLine() {
+  const ch = DATA.changed || {};
+  const bits = [];
+  if (ch.rates && ch.rates.moves.length) {
+    const TERM = { '6m': L('6 个月','6m'), '1y': L('1 年','1yr'), '18m': L('18 个月','18m'),
+                   '2y': L('2 年','2yr'), '3y': L('3 年','3yr'), '5y': L('5 年','5yr') };
+    const parts = ch.rates.moves.map(([term, was, now]) => {
+      const dir = now > was ? 'worse' : 'better';   // a rate rising is bad news
+      return `${TERM[term] || term} <b>${was.toFixed(2)}% → <span class="${dir}">${now.toFixed(2)}%</span></b>`;
+    });
+    bits.push(L(`各行最低挂牌利率变动：${parts.join('、')}`,
+                `Cheapest carded rates moved: ${parts.join(', ')}`));
+  }
+  if (ch.release && ch.release[0])
+    bits.push(L(`价格源发布了新一期（${ch.release[0]} → <b>${ch.release[1]}</b>），全部郊区的估值已更新。`,
+                `The price source published a new release (${ch.release[0]} → <b>${ch.release[1]}</b>); every suburb's valuation is updated.`));
+  return bits;
+}
+
 function subCopy() {
   return LANG === 'zh'
     ? `按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），数据截至 <b>${DATA.asAt}</b>。
@@ -2760,6 +2801,12 @@ function fillStats() {
   set('#nUnits', DATA.unitsMatched.toLocaleString('en-NZ'));
   set('#nTotal', all.length);
   set('#nPriced', priced.length);
+  const bits = changesLine();
+  const box = $('#changed');
+  box.hidden = !bits.length;
+  if (bits.length)
+    box.innerHTML = `<span class="lab">${L('本周变化', 'What moved')}</span>` +
+                    `<span>${bits.join(L('　', ' · '))}</span>`;
   set('#rateAsAt', DATA.fin.m.asAt);
   set('#rateYear', DATA.fin.c.year);
   set('#rateAvgCv', fmt(DATA.fin.c.avgCv));

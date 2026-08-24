@@ -107,6 +107,50 @@ def mortgage_rates():
     }
 
 
+# --- what moved since last time -------------------------------------------
+# Proposed as a job for Delta's change data feed, and it is not one. bank_rate
+# is a type 2 dimension: valid_from is when a rate opened and valid_to is when
+# it closed, so "what changed this week" is a WHERE clause on dates the table
+# already carries. CDF would return the same facts as row-level inserts and
+# deletes, less directly. market_snapshot is replaced wholesale each run, so a
+# change feed over it is entirely noise.
+CHANGE_WINDOW_DAYS = 8       # a weekly job, plus slack for a late run
+
+
+def recent_changes():
+    """A short, honest account of what moved. Empty is a valid answer and says
+    so — the first run has nothing to compare against, and a quiet week really
+    is quiet."""
+    from datetime import date, timedelta
+    since = date.today() - timedelta(days=CHANGE_WINDOW_DAYS)
+    out = {"since": since.isoformat(), "rates": None, "release": None}
+
+    table = Path(os.environ.get("AKL_RATE_TABLE", DATA / "state" / "bank_rate"))
+    if table.exists():
+        try:
+            from deltalake import DeltaTable
+            rows = DeltaTable(str(table)).to_pyarrow_table().to_pylist()
+            main = {"ANZ", "ASB", "BNZ", "Kiwibank", "Westpac"}
+            opened = [r for r in rows if r["valid_from"] >= since and r["bank"] in main]
+            closed = [r for r in rows if r["valid_to"] and r["valid_to"] >= since
+                      and r["bank"] in main]
+            # Only report a move where both sides exist; a rate that merely
+            # appeared for the first time is not a repricing.
+            moves = []
+            for term in ("6m", "1y", "18m", "2y", "3y", "5y"):
+                was = [r["rate"] for r in closed if r["term"] == term]
+                now = [r["rate"] for r in opened if r["term"] == term]
+                if was and now:
+                    moves.append([term, round(min(was), 2), round(min(now), 2)])
+            if moves:
+                out["rates"] = {"moves": moves,
+                                "banks": sorted({r["bank"] for r in opened})}
+        except Exception as exc:  # noqa: BLE001 - a page must not fail on this
+            print(f"  (no rate changes read: {exc})")
+
+    return out
+
+
 # --- Auckland Council rates, 2026/2027 -----------------------------------------
 # The council publishes the *average* bill and the year-on-year movement of each
 # component, but not the schedule of rates in the dollar, so the split below is
@@ -280,6 +324,7 @@ def main():
     # so a missing rates file stops the run before it has written a CSV and a
     # join report that no longer match the page.
     rates = mortgage_rates()
+    changes = recent_changes()
 
     # Geography and typical section size come from the database, where the
     # spatial joins already happened.
@@ -301,6 +346,9 @@ def main():
                      / count(*)::DOUBLE, 3) AS house_share
         FROM rating_unit r JOIN suburb s USING (suburb_id)
         GROUP BY 1""").fetchall()}
+    releases = [r[0] for r in con.execute(
+        "SELECT DISTINCT source_as_at FROM market_snapshot ORDER BY 1 DESC LIMIT 2"
+    ).fetchall()]
     con.close()
 
     by_name = {norm(p["suburb_name"]): p
@@ -364,6 +412,11 @@ def main():
     priced = [r for r in rows if r["price"]]
     mid = median(r["price"] for r in priced)
 
+    if len(releases) >= 2:
+        changes["release"] = [str(releases[1]), str(releases[0])]
+    elif releases:
+        changes["release"] = [None, str(releases[0])]
+
     # ---- CSV -----------------------------------------------------------------
     DATA.mkdir(parents=True, exist_ok=True)
     cols = ["name", "type", "major", "price", "yoy", "growth", "rent", "yield",
@@ -422,6 +475,7 @@ def main():
         # without visitors needing their own key. Empty = the option is absent.
         "proxy": os.environ.get("AKL_AGENT_PROXY", ""),
         "fin": {"m": rates, "c": COUNCIL},
+        "changed": changes,
         "valuationDate": detail["valuationDate"],
         "prevValuationDate": detail["prevValuationDate"],
         "unitsMatched": detail["unitsMatched"],
@@ -475,7 +529,7 @@ def main():
                 "smoothField", "fieldImage", "drawDetailMap", "enterDetail",
                 "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
                 "repayment", "councilRates", "calcCard", "renderCalcOut",
-                "seedCalc", "calcPanel", "readIntent", "renderAssess",
+                "seedCalc", "calcPanel", "readIntent", "renderAssess", "changesLine",
                 "renderCompare", "explainAnswer", "assessBlock"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]
