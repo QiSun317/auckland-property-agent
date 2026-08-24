@@ -37,6 +37,9 @@
   h1 { font-size:26px; line-height:1.25; margin:0 0 6px; font-weight:650; letter-spacing:-.01em; }
   .sub { color:var(--ink-2); margin:0 0 22px; font-size:14px; }
   .sub b { color:var(--ink); font-weight:600; }
+  .fresh { display:block; margin-top:5px; font-size:12.5px; color:var(--muted); }
+  .fresh b { color:var(--ink-2); font-weight:600; }
+  .fresh a { color:var(--accent); }
 
   .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
   .tile {
@@ -2829,7 +2832,7 @@ function provenance() {
     ? new Date(b.at).toLocaleString(LANG === 'zh' ? 'zh-CN' : 'en-NZ',
         { dateStyle: 'medium', timeStyle: 'short' })
     : '';
-  return `<h2>${L('数据是什么时候取的', 'When this was fetched')}</h2>
+  return `<h2 id="when">${L('数据是什么时候取的', 'When this was fetched')}</h2>
     <p style="margin:0 0 8px">${L(
       `本页构建于 <b>${built}</b>。每周一自动重跑一次，各源按自己的节奏抓 —— ` +
       `所以下面的日期本来就不该相同，房价季度级刷新，利率几天一变。`,
@@ -2842,19 +2845,34 @@ function provenance() {
       `The most recent successful fetch was ${newest} days ago — the scheduled job may have stopped, so treat these figures as stale.`)}</p>` : ''}`;
 }
 
+// Four dates exist and only one of them was on screen: the source's own
+// valuation basis. A reader seeing "as at June 2026" in August has no way to
+// tell whether the page is two months stale or was rebuilt this morning — and
+// the answer, both being true of different things, is not something to make
+// them scroll to the bottom for.
+function freshness() {
+  const days = DATA.built && DATA.built.at
+    ? Math.floor((Date.now() - Date.parse(DATA.built.at)) / 864e5) : null;
+  if (days === null) return '';
+  const when = days < 1 ? L('今天', 'today')
+    : days === 1 ? L('昨天', 'yesterday') : L(`${days} 天前`, `${days} days ago`);
+  return L(`<span class="fresh">本页 <b>${when}</b>自动刷新过 · <a href="#when">数据来源与时间</a></span>`,
+           `<span class="fresh">This page refreshed <b>${when}</b> · <a href="#when">sources and dates</a></span>`);
+}
+
 function subCopy() {
   return LANG === 'zh'
-    ? `按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），数据截至 <b>${monthLabel(DATA.asAt)}</b>。
+    ? `按郊区（suburb）着色的<b>平均房产估值</b>（Average House Value），<b>数据源的口径日期</b>为 <b>${monthLabel(DATA.asAt)}</b>（源站按季度更新，不是本页的刷新时间）。
        颜色像气温图：<b>越红越贵，越蓝越便宜</b>，灰白色 = 接近全区中位水平。
        <b>点击任一郊区</b>可查看该区简介与区内逐街区的房价热力图。`
-    : `<b>Average house value</b> by suburb, as at <b>${monthLabel(DATA.asAt)}</b>. The colour reads like a
+    : `<b>Average house value</b> by suburb, on the <b>source's own valuation basis</b> of <b>${monthLabel(DATA.asAt)}</b> (the source updates quarterly; this is not when the page last refreshed). The colour reads like a
        temperature map: <b>redder is dearer, bluer is cheaper</b>, near-neutral means close to the regional median.
        <b>Click any suburb</b> for an intro and a block-by-block heat map inside it.`;
 }
 
 function fillStats() {
   $('#notes').innerHTML = notesHtml() + provenance();
-  $('#subCopy').innerHTML = subCopy();
+  $('#subCopy').innerHTML = subCopy() + freshness();
   const set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
   set('#saleMed', fmt(DATA.regionSaleMedian));
   set('#lu', DATA.lastUpdated);

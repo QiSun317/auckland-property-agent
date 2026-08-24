@@ -580,7 +580,7 @@ def main():
                 "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
                 "repayment", "councilRates", "calcCard", "renderCalcOut",
                 "seedCalc", "calcPanel", "readIntent", "renderAssess", "changesLine",
-                "provenance", "monthLabel",
+                "provenance", "monthLabel", "freshness",
                 "renderCompare", "explainAnswer", "assessBlock"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]
