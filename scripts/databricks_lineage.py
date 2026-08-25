@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from databricks_sync import CATALOG, SCHEMA, sql, warehouse  # noqa: E402
+from field_notes import en as note  # noqa: E402
 
 NS = f"{CATALOG}.{SCHEMA}"
 
@@ -53,20 +54,13 @@ TABLE_COMMENTS = {
                     "visible; a pass/fail gate cannot see one.",
 }
 
-# Base-table columns only. The view columns are declared with the view in
-# databricks_views.py, because a view will not take ALTER COLUMN COMMENT.
+# Base-table columns only — the view columns are declared with the view in
+# databricks_views.py, because a view will not take ALTER COLUMN COMMENT. Both
+# read the same definitions out of field_notes.py, which is also what the page
+# shows a reader on hover. One sentence, three places it can be seen.
 COLUMN_COMMENTS = {
-    ("valuation", "cv"):
-        "Capital value, the council's assessment of land plus improvements at "
-        "the valuation date. Set on a three-year cycle, so it is a valuation "
-        "and not a price, and it lags the market by up to three years.",
-    ("valuation", "valuation_date"):
-        "The revaluation round this figure belongs to, not the date it was "
-        "loaded. Region-wide these move together.",
-    ("rating_unit", "land_area_m2"):
-        "NULL or zero for cross-lease and unit-title properties, which is "
-        "about 30% of all rating units — an absent value here usually means a "
-        "flat, not missing data.",
+    ("valuation", "cv"): note("median_cv"),
+    ("rating_unit", "land_area_m2"): note("median_section_m2"),
     ("bank_rate", "rate"):
         "The carded rate, which is what a bank advertises. NOT the rate a "
         "given borrower is offered: that depends on the bank, the deposit and "

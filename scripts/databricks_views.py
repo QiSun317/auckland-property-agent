@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from databricks_sync import CATALOG, SCHEMA, sql, warehouse  # noqa: E402
+from field_notes import en as note  # noqa: E402
 
 NS = f"{CATALOG}.{SCHEMA}"
 
@@ -87,33 +88,19 @@ VIEWS = {
         GROUP BY 1, 2""",
 }
 
-# The caveats that change the answer if you get them wrong. On the view rather
-# than in a markdown file, because this is where someone writing
-# SELECT avg_house_value will actually be looking.
+# The caveats that change the answer if you get them wrong, pulled from the one
+# place they are written. They used to be duplicated here and in
+# databricks_lineage.py, and the page had a third version of the same idea in
+# prose — three copies of a definition is two too many.
 VIEW_COLUMN_COMMENTS = {
     "suburb_overview": {
-        "avg_house_value":
-            "Average of automated valuations across all housing stock. NOT a "
-            "sale price and not comparable to a sale median: the regional "
-            "REINZ sale median was $980,000 over the same period while the "
-            "median of these is $1,165,950. One weights by what sold, the "
-            "other weights every suburb equally over all stock.",
-        "cv_median":
-            "Median council capital value across ALL rating units, including "
-            "apartments, retail and industrial land. Apartment-dense and "
-            "industrial suburbs read far below a residential interpretation.",
-        "entry_price":
-            "25th percentile of council capital values, i.e. what it costs to "
-            "get in. Not the average, and the gap is the point: East Tamaki "
-            "averages $1.07m and starts at $790,000.",
-        "value_to_cv":
-            "Commercial AVM divided by median council CV. The only "
-            "cross-check between two independent price sources. Region-wide "
-            "the median is about 1.0, which says they agree overall and "
-            "nothing about where they do not.",
-        "population":
-            "From the market data source, not a census. Missing where the "
-            "source does not cover the suburb.",
+        "avg_house_value": note("avg_value"),
+        "cv_median": note("median_cv"),
+        "entry_price": note("entry_price"),
+        "population": note("population"),
+        "est_gross_yield_pct": note("gross_yield"),
+        "median_days_to_sell": note("days_to_sell"),
+        "cbd_km": note("cbd_km"),
     },
 }
 

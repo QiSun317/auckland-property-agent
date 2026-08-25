@@ -20,6 +20,7 @@ from statistics import median
 # database build so the page and the db cannot disagree.
 from build_db import ALIASES
 from suburb_traits import extract_all as suburb_traits
+from field_notes import payload as field_notes
 
 try:
     import duckdb
@@ -529,6 +530,10 @@ def main():
         # without visitors needing their own key. Empty = the option is absent.
         "proxy": os.environ.get("AKL_AGENT_PROXY", ""),
         "fin": {"m": rates, "c": COUNCIL},
+        # What each figure measures. Defined once in field_notes.py and
+        # also declared on the Unity Catalog columns, so the caveat a SQL
+        # user sees and the one a reader sees cannot drift apart.
+        "notes": field_notes(),
         "changed": changes,
         "valuationDate": detail["valuationDate"],
         "prevValuationDate": detail["prevValuationDate"],
@@ -585,7 +590,7 @@ def main():
                 "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
                 "repayment", "councilRates", "calcCard", "renderCalcOut",
                 "seedCalc", "calcPanel", "readIntent", "renderAssess", "changesLine",
-                "provenance", "monthLabel", "freshness", "traitChips",
+                "provenance", "monthLabel", "freshness", "traitChips", "noteFor",
                 "renderCompare", "explainAnswer", "assessBlock"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]

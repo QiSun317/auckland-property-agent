@@ -433,6 +433,11 @@
   .astats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 14px;
             font-size:12px; margin:8px 0 10px; }
   .astats div { border-bottom:1px solid var(--hair); padding-bottom:4px; }
+  .astats div.cited { cursor:help; }
+  .astats div.cited span:first-child {
+    text-decoration:underline dotted var(--muted); text-underline-offset:3px;
+  }
+  .citehint { font-size:10.5px; color:var(--muted); margin:-4px 0 9px; }
 
   .cmp { margin-top:9px; }
   .cmp table { border-collapse:collapse; width:100%; font-size:12.5px; min-width:340px; }
@@ -2267,11 +2272,25 @@ function traitChips(s) {
     'from the Wikipedia intro — hover for the phrase')}</em></div>`;
 }
 
+// The measurement basis for a field, in the reader's language. Baked in from
+// field_notes.py, the same definition Unity Catalog carries on its columns.
+function noteFor(key) {
+  const n = (DATA.notes || {})[key];
+  if (!n) return '';
+  return (LANG === 'zh' ? n[0] : n[1])
+    .replace(/\*\*/g, '').replace(/"/g, '&quot;');
+}
+
 function assessBlock(s, c) {
   const dt = s.dt, st = s.p ? standing(s) : null;
   const r = { s, a: affordShare(s, c.budget), bs: 0, prefScore: 0, total: 0 };
   const pc = prosCons(r, c);
-  const row = (k, v) => v == null ? '' : `<div><span>${k}</span><span>${v}</span></div>`;
+  // Every figure carries what it measures. A number and a number you can ask
+  // "what is this, exactly" of are different things to hand someone who is
+  // about to spend a million dollars on the strength of it.
+  const row = (k, v, note) => v == null ? '' :
+    `<div${note ? ` class="cited" title="${noteFor(note)}"` : ''}>` +
+    `<span>${k}</span><span>${v}</span></div>`;
 
   const verdict = st
     ? L(`全区 ${st.of} 个有价格的郊区里排第 <b>${st.rank}</b> 贵（高于 ${st.pct}% 的郊区）。`,
@@ -2279,16 +2298,18 @@ function assessBlock(s, c) {
     : L('这个区没有市场价格数据。', 'No market price data for this suburb.');
 
   const stats = [
-    row(L('入门价（25% 分位 CV）', 'Entry price (25th pct CV)'), dt ? fmt(dt.q[1]) : null),
-    row(L('政府估价中位', 'Median council CV'), dt ? fmt(dt.med) : null),
-    row(L('平均估值', 'Average value'), s.p ? fmt(s.p) : null),
-    row(L('近一年变化', 'Past year'), s.y == null ? null : pct(s.y)),
-    row(L('长期年化增长', 'Long-term growth'), s.g == null ? null : s.g.toFixed(1) + '%'),
-    row(L('估算租金回报', 'Est. gross yield'), s.i == null ? null : s.i.toFixed(1) + '%'),
-    row(L('周租金中位', 'Median rent/wk'), s.r ? '$' + s.r : null),
-    row(L('中位售出天数', 'Days to sell'), s.s ? s.s + L(' 天', '') : null),
-    row(L('近 12 月成交', 'Sold, 12m'), s.c ? s.c + L(' 套', '') : null),
-    row(L('离市中心', 'To the city'), s.km == null ? null : s.km + ' km'),
+    row(L('入门价', 'Entry price'), dt ? fmt(dt.q[1]) : null, 'entry_price'),
+    row(L('政府估价中位', 'Median council CV'), dt ? fmt(dt.med) : null, 'median_cv'),
+    row(L('平均估值', 'Average value'), s.p ? fmt(s.p) : null, 'avg_value'),
+    row(L('近一年变化', 'Past year'), s.y == null ? null : pct(s.y), 'change_1y'),
+    row(L('长期年化增长', 'Long-term growth'), s.g == null ? null : s.g.toFixed(1) + '%',
+        'long_term_growth'),
+    row(L('估算租金回报', 'Est. gross yield'), s.i == null ? null : s.i.toFixed(1) + '%',
+        'gross_yield'),
+    row(L('周租金中位', 'Median rent/wk'), s.r ? '$' + s.r : null, 'median_rent'),
+    row(L('中位售出天数', 'Days to sell'), s.s ? s.s + L(' 天', '') : null, 'days_to_sell'),
+    row(L('近 12 月成交', 'Sold, 12m'), s.c ? s.c + L(' 套', '') : null, 'sold_12m'),
+    row(L('离市中心', 'To the city'), s.km == null ? null : s.km + ' km', 'cbd_km'),
   ].join('');
 
   return { verdict, stats, pc, r };
@@ -2304,6 +2325,8 @@ function renderAssess(s, c, why) {
     <p class="verdict">${b.verdict}</p>
     ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
     <div class="dstats astats">${b.stats}</div>
+    <div class="citehint">${L('带下划线的指标可以悬停，看它到底量的是什么',
+                              'Hover an underlined figure to see what it actually measures')}</div>
     ${traitChips(s)}
     <ul>${b.pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
         ${b.pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
@@ -2615,6 +2638,7 @@ function tableRow(x) {
 }
 const suburbTable = () => ({
   fields: TABLE_FIELDS,
+  field_notes: DATA.notes,
   rows: all.filter(x => x.p && x.dt).map(tableRow),
 });
 
