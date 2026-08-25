@@ -139,7 +139,7 @@ TRAITS = {
 
 LABELS = {
     "coastal": ("近海", "coastal"), "bush": ("近林地", "bush"),
-    "rural": ("乡村", "rural"), "island": ("海岛", "island"),
+    "rural": ("乡村", "rural"),
     "volcanic": ("火山地貌", "volcanic"), "town_centre": ("有商业中心", "town centre"),
     "historic": ("历史街区", "historic"), "industrial": ("有工业", "industrial"),
 }
