@@ -582,6 +582,7 @@
   </div>
   <div id="aiLog"></div>
   <div id="aiChips">
+    <button data-zh="我想住海边" data-en="Somewhere near the beach">我想住海边</button>
     <button data-zh="预算 110 万，三房，北岸" data-en="Budget $1.1m, 3 bedrooms, North Shore">预算 110 万，三房，北岸</button>
     <button data-zh="预算 90 万投资，看重租金回报" data-en="$900k to invest, want rental yield">预算 90 万投资，看重租金回报</button>
     <button data-zh="预算 150 万，要大院子，离市中心 20 公里内" data-en="$1.5m, big section, within 20 km of the city">预算 150 万，要大院子，离市中心 20 公里内</button>
@@ -2246,11 +2247,12 @@ function offTopic(text, raw, merged = raw, last = AI.last) {
 
 function refuse() {
   say(L('我只做一件事：<b>按预算帮你在奥克兰挑 suburb</b>，别的问题我不回答。<br>' +
-        '可以这样问我：「预算 110 万，三房，北岸」「90 万投资，看重租金回报」' +
-        '「150 万要大院子，离市中心 20 公里内」。',
+        '可以这样问我：「预算 110 万，三房，北岸」「90 万投资，看重租金回报」。<br>' +
+        '也可以先说个大概，再接着调：「我想住海边」→「有没有贵一点的」。',
         'I do one thing: <b>shortlist Auckland suburbs against a budget</b>. ' +
         'Anything else I will not answer.<br>Try: "$1.1m, 3 bedrooms, North Shore", ' +
-        '"$900k to invest, want yield", "$1.5m, big section, within 20 km of the city".'));
+        '"$900k to invest, want yield".<br>' +
+        'Or start rough and refine: "somewhere near the beach" → "anything dearer?".'));
 }
 
 // Outline a recommendation on the region map while the pointer is on its card.
@@ -2945,9 +2947,13 @@ async function askModel(text, c, last) {
 }
 
 /* ---------- panel wiring ---------- */
+// Written when the proxy was unset and the model had never actually been
+// called, so "the AI only reads your request" was true. It picks the suburbs
+// now, and its wording is what you read when it survives the checks — saying
+// otherwise undersells it and, more to the point, is not true.
 $('#aiFoot').innerHTML = MODEL_ON
-  ? L('选区、打分与优缺点全部由本页数据算出；AI 只负责读懂你的话。',
-      'The shortlist, scoring and trade-offs are computed from this page\u2019s data; the AI only reads your request.')
+  ? L(`AI 读你的话，从 ${priced.length} 个区里挑；它写的每个数字都经本页逐条核对，核不过就换回规则算出的理由。`,
+      `The AI reads your request and picks from all ${priced.length} suburbs; every figure it writes is checked against that suburb\u2019s own row, and anything that fails is replaced by the rule-generated version.`)
   : L('全部由本页数据按规则算出。', 'Computed from this page\u2019s data by rule.');
 function openPanel() { $('#aiPanel').hidden = false; $('#aiToggle').hidden = true; $('#aiInput').focus(); }
 function closePanel() { $('#aiPanel').hidden = true; $('#aiToggle').hidden = false; }
@@ -2969,8 +2975,12 @@ document.querySelectorAll('#aiChips button').forEach(b =>
 function resetAssistant() {
   $('#aiLog').innerHTML = '';
   AI.last = null;
-  say(L('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，并说清每个区的好处和代价。<br>价格口径：平均估值与议会 CV，都不是成交价。',
-        'Tell me your <b>budget</b> and roughly where you want to be. I shortlist suburbs budget-first and spell out what each one costs you.<br>All figures are estimates — automated valuations and council CVs, not sale prices.'));
+  say(L('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，并说清每个区的好处和代价。<br>' +
+        '也可以慢慢说：先讲个大概，再用「<b>贵一点的</b>」「<b>再远一点</b>」接着调，我记着上一轮的条件；想清空就说「重新开始」。<br>' +
+        '价格口径：平均估值与议会 CV，都不是成交价。',
+        'Tell me your <b>budget</b> and roughly where you want to be. I shortlist suburbs budget-first and spell out what each one costs you.<br>' +
+        'You can also take it a step at a time: start rough, then say <b>"anything dearer"</b> or <b>"further out"</b> and I carry your criteria forward. Say "start over" to clear them.<br>' +
+        'All figures are estimates — automated valuations and council CVs, not sale prices.'));
 }
 resetAssistant();
 
@@ -2981,7 +2991,8 @@ function notesHtml() {
     <h2>免责声明</h2>
     <p style="margin:0 0 16px">个人研究项目，<b>不构成投资或购房建议</b>。页面上所有价格都是<b>估值</b>
       —— 自动估值模型与议会政府估价（CV）—— <b>不是成交价</b>，个体房产可能与之相差很大。
-      选房助手的推荐来自公开数据上的统计规则，它不了解你的财务状况、也没有任何实地信息。
+      选房助手由 AI 读懂你的需求、从公开数据里挑区，它写的每个数字都经本页逐条核对；
+      但它不了解你的财务状况，也没有任何实地信息。
       做决定前请咨询持牌中介、注册估价师或财务顾问。</p>
     <h2>关于数据</h2>
     <ul>
@@ -3002,8 +3013,9 @@ function notesHtml() {
     <p style="margin:0 0 16px">A personal research project. <b>Not investment or property advice.</b>
       Every figure here is an <b>estimate</b> — an automated valuation model, or the council's
       rating valuation (CV) — <b>not a sale price</b>, and an individual property can sit a long way
-      from it. The suburb finder applies statistical rules to public data; it knows nothing about your
-      finances and has never seen the houses. Talk to a licensed agent, a registered valuer or a
+      from it. The suburb finder has a language model read your request and pick suburbs from public
+      data, and every figure it writes is checked against that suburb's own row before you see it.
+      It still knows nothing about your finances and has never seen the houses. Talk to a licensed agent, a registered valuer or a
       financial adviser before deciding anything.</p>
     <h2>About the data</h2>
     <ul>
