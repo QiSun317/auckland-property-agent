@@ -421,6 +421,13 @@
                font-variant-numeric:tabular-nums; }
   .rec .cost b { color:var(--ink-2); font-weight:600; }
 
+  .traits { display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin:0 0 9px; }
+  .traits .trait {
+    font-size:11px; padding:2px 8px; border-radius:11px; cursor:help;
+    border:1px solid var(--ring); background:var(--surface); color:var(--ink-2);
+  }
+  .traits em { font-style:normal; font-size:10.5px; color:var(--muted); }
+
   .rec.assess .verdict { margin:6px 0 8px; font-size:12.5px; color:var(--ink-2); }
   .rec.assess .verdict b { color:var(--ink); }
   .astats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 14px;
@@ -1800,6 +1807,8 @@ const WANT_WORDS = {
   apartment: ['公寓', 'apartment', 'unit', '小户型'],
   commute: ['通勤', '上班', '方便', '交通', 'commute'],
   coastal: ['海边', '海景', '靠海', 'beach', 'coastal', '沙滩'],
+  bush: ['林地', '树林', '山林', '自然环境', '绿化', 'bush', 'forest', 'greenery', 'native'],
+  town_centre: ['商圈', '商业中心', '生活便利', '配套', '购物方便', 'shops', 'amenities', 'town centre', 'shopping'],
   growth: ['升值', '增值', '涨', 'growth', 'potential'],
   liquid: ['好卖', '好脱手', '流动'],
   cheap: ['便宜', '实惠', '划算', '经济', '入门', '低价', 'cheap', 'cheapest', 'affordable', 'low price', 'entry level', 'bargain'],
@@ -1869,6 +1878,8 @@ const missingLabels = keys => keys.map(k => MISSING_LABEL[k][LANG === 'zh' ? 0 :
 
 /* ---------- scoring ---------- */
 const REF = DATA.ref;
+// want -> trait field. Only the wants the intros can speak to.
+const TRAIT_WANTS = { coastal: 'coastal', bush: 'bush', town_centre: 'town_centre' };
 const density = s => (s.o && s.ar) ? s.o / s.ar : null;   // people per km2
 
 function scoreSuburb(s, c) {
@@ -1907,13 +1918,18 @@ function scoreSuburb(s, c) {
       const d = density(s);
       add(d === null ? 0.5 : clamp01(1 - d / 4000), 1.0);
     }
-    if (w === 'coastal') {
-      // Was guessing from the name alone, which scored Mission Bay and missed
-      // Muriwai. The intro says it outright where there is one.
-      const about = s.w ? s.w.extract : '';
-      const named = /bay|beach|point|heads|coast|island/i.test(s.n);
-      const said = /beach|coast|harbour|harbor|shore|seaside|waterfront|gulf|bay/i.test(about);
-      add(said ? 1 : named ? 0.8 : 0.15, 0.9);
+    // Traits are read out of the intros once at build time, so the rules can
+    // use them too. They used to be reachable only by the model, which meant
+    // that with the model unavailable "somewhere near the beach" came back
+    // scored on everything except the beach.
+    //
+    // Absent is unknown, not false — Wikipedia not mentioning a beach is not
+    // evidence there is no beach — so a missing trait scores neutral rather
+    // than zero, and no suburb is pushed down for what nobody wrote about it.
+    if (TRAIT_WANTS[w]) {
+      const said = s.tr && s.tr[TRAIT_WANTS[w]];
+      const named = w === 'coastal' && /bay|beach|point|heads|coast/i.test(s.n);
+      add(said ? 1 : named ? 0.8 : (s.w ? 0.2 : 0.5), 0.9);
     }
   }
   const prefScore = weight ? pref / weight : 0.5;
@@ -2233,6 +2249,24 @@ function standing(s) {
   return { rank: sortedPrices.length - rank, of: sortedPrices.length, pct };
 }
 
+// What the intro said, with the phrase that said it. The evidence is the
+// point: an assistant that asserts "coastal" and an assistant that shows you
+// "bordering the Manukau Harbour" are making different promises.
+const TRAIT_L = {
+  coastal: ['近海', 'coastal'], bush: ['近林地', 'bush'], rural: ['乡村', 'rural'],
+  volcanic: ['火山地貌', 'volcanic'], town_centre: ['有商圈', 'town centre'],
+  historic: ['历史街区', 'historic'], industrial: ['有工业', 'industrial'],
+};
+
+function traitChips(s) {
+  if (!s.tr) return '';
+  const chips = Object.entries(s.tr).map(([k, why]) =>
+    `<span class="trait" title="${why.replace(/"/g, '&quot;')}">${
+      L(TRAIT_L[k] ? TRAIT_L[k][0] : k, TRAIT_L[k] ? TRAIT_L[k][1] : k)}</span>`).join('');
+  return `<div class="traits">${chips}<em>${L('来自维基简介，悬停看原文依据',
+    'from the Wikipedia intro — hover for the phrase')}</em></div>`;
+}
+
 function assessBlock(s, c) {
   const dt = s.dt, st = s.p ? standing(s) : null;
   const r = { s, a: affordShare(s, c.budget), bs: 0, prefScore: 0, total: 0 };
@@ -2270,6 +2304,7 @@ function renderAssess(s, c, why) {
     <p class="verdict">${b.verdict}</p>
     ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
     <div class="dstats astats">${b.stats}</div>
+    ${traitChips(s)}
     <ul>${b.pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
         ${b.pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
     <div class="cost">${costLine(s)}</div>
@@ -2557,7 +2592,8 @@ const MODEL_ON = !!DATA.proxy;
 const TABLE_FIELDS = ['name', 'zone', 'entry_price', 'median_cv', 'avg_value',
   'cbd_km', 'change_1y_pct', 'long_term_growth_pct', 'gross_yield_pct',
   'median_rent_wk', 'days_to_sell', 'sold_12m', 'population', 'renter_pct',
-  'own_section_pct', 'median_section_m2', 'bedroom_mix_1_to_5_pct', 'about'];
+  'own_section_pct', 'median_section_m2', 'bedroom_mix_1_to_5_pct',
+  'traits_from_intro', 'about'];
 
 function tableRow(x) {
   const r1 = v => v == null ? null : Math.round(v);
@@ -2568,6 +2604,10 @@ function tableRow(x) {
           x.r || null, x.s || null, x.c || null, x.o || null, r1(x.rp),
           x.hs == null ? null : Math.round(x.hs * 100), x.la || null,
           (x.bm || []).map(v => Math.round(v || 0)).join('/') || null,
+          // Read out of the intro at build time and verified against it. The
+          // model gets the conclusion as a field instead of having to re-derive
+          // it from the paragraph below on every question.
+          x.tr ? Object.keys(x.tr).join('/') : null,
           // The Wikipedia opening paragraph. Costs ~23k tokens across the whole
           // table and buys the model an actual sense of place, instead of the
           // page guessing "coastal" from whether the name contains "bay".

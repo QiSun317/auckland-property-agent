@@ -19,6 +19,7 @@ from statistics import median
 # One definition of "these two names are the same place", shared with the
 # database build so the page and the db cannot disagree.
 from build_db import ALIASES
+from suburb_traits import extract_all as suburb_traits
 
 try:
     import duckdb
@@ -367,6 +368,9 @@ def main():
     # join report that no longer match the page.
     rates = mortgage_rates()
     changes = recent_changes()
+    # What the intros say, read once here rather than by the model on every
+    # question. Each trait carries the phrase that justified it.
+    traits = suburb_traits()
     as_at, last_updated = source_dates(prices)
     fetched = fetch_times()
 
@@ -549,6 +553,7 @@ def main():
             "br": r["bedrent"] if any(r["bedrent"]) else None,
             "h": r["hist"],
             "w": r["wiki"],
+            "tr": traits.get(r["name"]) or None,
             "dt": r["detail"],
             "lb": r["geo"].get("lb"),
             "z": r["geo"].get("z"),
@@ -580,7 +585,7 @@ def main():
                 "scoreSuburb", "prosCons", "askModel", "detectLang", "applyLang",
                 "repayment", "councilRates", "calcCard", "renderCalcOut",
                 "seedCalc", "calcPanel", "readIntent", "renderAssess", "changesLine",
-                "provenance", "monthLabel", "freshness",
+                "provenance", "monthLabel", "freshness", "traitChips",
                 "renderCompare", "explainAnswer", "assessBlock"]
     missing = [n for n in required
                if f"function {n}" not in body and f"const {n}" not in body]
