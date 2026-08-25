@@ -1757,7 +1757,11 @@ calcPanel().addEventListener('toggle', () =>
    computed from the payload — the optional LLM only reads the request and
    writes the intro sentence; it never picks suburbs and never states a number.
    ========================================================================== */
-const AI = { busy: false };
+// last holds what the previous turn settled on, so a follow-up is read against
+// it instead of from nothing. Without it every turn re-parsed one sentence in
+// isolation: "somewhere by the sea" scored two topic signals and answered,
+// then "anywhere dearer?" scored zero and was refused as chit-chat.
+const AI = { busy: false, last: null };
 
 /* ---------- budget: share of a suburb's stock within budget ---------- */
 // The detail payload carries a 24-bin log-spaced histogram of council capital
@@ -1829,8 +1833,8 @@ const UNSUPPORTED = {
 
 function parseRequest(text) {
   const t = text.toLowerCase();
-  const c = { budget: null, beds: null, zones: [], suburbs: [], maxKm: null,
-              wants: [], missing: [] };
+  const c = { budget: null, minPrice: null, maxPrice: null, beds: null, zones: [],
+              suburbs: [], maxKm: null, minKm: null, wants: [], missing: [] };
 
   // budget — take the largest figure mentioned, that is the ceiling people mean
   const cands = [];
@@ -1874,6 +1878,123 @@ function parseRequest(text) {
   return c;
 }
 
+/* ---------- carrying the conversation ----------
+   Every turn used to parse one sentence from nothing, which made the assistant
+   unable to be talked to. "Somewhere by the sea" answered; the obvious next
+   thing to say — "anything dearer?" — carried no budget, no zone and no topic
+   word, scored zero, and was refused as chit-chat. The reader had said what
+   they wanted one sentence earlier and the page had thrown it away.
+
+   So the criteria persist across turns and a follow-up is merged into them.
+   The model still sees a single turn: what it is sent is the merged intent,
+   restated by the page. That keeps the existing division of labour — the page
+   decides, the model reads — and costs nothing per turn. */
+
+// A relative move only means something against what was just offered: "dearer"
+// is dearer than those three, not dearer in the abstract.
+const SHIFT = {
+  dearer:  /贵一?[点些]|再贵|更贵|高档|档次高|上个档次|好一?点的区|dearer|pricier|more expensive|higher.end|upmarket|step up/i,
+  cheaper: /便宜一?[点些]|再便宜|更便宜|低一?[点些]|省一?[点些]|cheaper|less expensive|more affordable|lower.priced/i,
+  further: /远一?[点些]|再远|更远|往外|外围|further|farther|further out/i,
+  closer:  /近一?[点些]|再近|更近|closer|nearer/i,
+};
+// Pronouns and bare comparatives. These have no topic word of their own and
+// never will — they are only meaningful as a continuation.
+const FOLLOW_UP = /^\s*(那|这|还有|再|换|其[他它]|别的|另外|多|少)|[呢吗][？?]?\s*$|^\s*(what|how) about\b|^\s*(any|show me|got any)\b.{0,20}\b(more|other|else)\b|^\s*(more|others?|else)\b/i;
+const RESTART = /^\s*(重新开始|重来|重新|清空|换个思路|从头|reset|start over|restart|clear)\s*[。.!！]?\s*$/i;
+
+// The entry price and distance of what was recommended last turn, which is
+// what a relative move is measured from.
+const lastStat = (names, key, pick) => {
+  const v = names.map(n => byName.get(n))
+    .map(x => key === 'km' ? x?.km : x?.dt?.q[1])
+    .filter(n => typeof n === 'number');
+  return v.length ? pick(...v) : null;
+};
+
+// Merge this turn into the last one. Anything stated afresh wins; anything left
+// unsaid is inherited. Named suburbs are the exception: they are a question
+// about those suburbs, and carrying them forward would turn every later
+// shortlist into an assessment of whatever was last named.
+function carryOver(text, c, last = AI.last) {
+  if (!last || RESTART.test(text))
+    return { c, carried: false, note: null, moved: null };
+
+  const prev = last.c;
+  const fresh = k => c[k] !== null && c[k] !== undefined;
+  const m = {
+    ...c,
+    budget:   fresh('budget')   ? c.budget   : prev.budget,
+    minPrice: fresh('minPrice') ? c.minPrice : prev.minPrice,
+    maxPrice: fresh('maxPrice') ? c.maxPrice : prev.maxPrice,
+    beds:     fresh('beds')     ? c.beds     : prev.beds,
+    maxKm:    fresh('maxKm')    ? c.maxKm    : prev.maxKm,
+    minKm:    fresh('minKm')    ? c.minKm    : prev.minKm,
+    zones:    c.zones.length ? c.zones : prev.zones,
+    wants:    [...new Set([...prev.wants, ...c.wants])],
+  };
+
+  let note = null, moved = null;
+  const names = last.names || [];
+  // "Cheaper than what?" — if the last turn came back empty there is nothing to
+  // measure from, and repeating the request would otherwise return the same
+  // empty answer indefinitely with no explanation.
+  if (!names.length && Object.values(SHIFT).some(re => re.test(text)))
+    note = L('上一轮没有筛出郊区，所以「更贵 / 更便宜 / 更远」没有参照物。放宽一个条件，或者说「重新开始」。',
+             'The last turn found no suburbs, so there is nothing for "dearer", "cheaper" or "further" to move from. Relax one of the criteria, or say "start over".');
+  if (SHIFT.dearer.test(text)) {
+    const floor = lastStat(names, 'price', Math.max);
+    if (floor) {
+      // Saying it again when the last move found nothing leaves the floor where
+      // it was, and the reader gets the same dead answer with no idea why. Say
+      // that they have reached the end of it instead.
+      if (m.minPrice !== null && floor <= m.minPrice)
+        note = L('这已经是刚才那批里最贵的一档了，在其它条件下没有更贵的。放宽区域，或者说「重新开始」。',
+                 'That was already the dearest of the last set, and nothing above it fits your other criteria. Widen the area, or say "start over".');
+      m.minPrice = Math.max(m.minPrice || 0, floor);
+      m.maxPrice = null;
+      moved = 'dearer';
+      m.wants = m.wants.filter(w => w !== 'cheap');
+      // A ceiling that sits under the new floor leaves nothing to offer. The
+      // reader asking for dearer has said the ceiling is the thing they are
+      // willing to move, so move it — and say so rather than quietly returning
+      // an empty list.
+      if (m.budget && m.budget <= floor * 1.05) {
+        note = L(`「贵一点」在原预算 ${fmt(m.budget)} 之内已经没有更贵的了，所以这一轮我<b>放开了预算上限</b>，只保留「比刚才那批贵」这个条件。`,
+                 `Nothing dearer fits the ${fmt(m.budget)} ceiling, so this turn I have <b>dropped the budget cap</b> and kept only "dearer than the last set".`);
+        m.budget = null;
+      }
+    }
+  } else if (SHIFT.cheaper.test(text)) {
+    const ceil = lastStat(names, 'price', Math.min);
+    // A ceiling, not a smaller budget. The budget is what the reader can pay
+    // and "cheaper" does not change it; lowering it instead meant the third
+    // "再便宜一点" in a row came back with the same suburbs, because the budget
+    // had already been dragged down to their entry price and Math.min then had
+    // nothing left to do.
+    if (ceil) {
+      if (m.maxPrice !== null && ceil >= m.maxPrice)
+        note = L('这已经是刚才那批里最便宜的一档了，在其它条件下没有更低的。放宽区域或预算，或者说「重新开始」。',
+                 'That was already the cheapest of the last set, and nothing below it fits your other criteria. Widen the area or the budget, or say "start over".');
+      m.maxPrice = m.maxPrice === null ? ceil : Math.min(m.maxPrice, ceil);
+      m.minPrice = null;
+      moved = 'cheaper';
+    }
+  }
+  if (SHIFT.further.test(text)) {
+    const far = lastStat(names, 'km', Math.max);
+    if (far !== null) { m.minKm = Math.round(far); m.maxKm = null; moved = 'further'; }
+  } else if (SHIFT.closer.test(text)) {
+    const near = lastStat(names, 'km', Math.min);
+    if (near !== null) { m.maxKm = Math.max(3, Math.round(near)); m.minKm = null; moved = 'closer'; }
+  }
+  if (m.budget === Infinity) m.budget = null;
+
+  const carried = JSON.stringify([m.budget, m.minPrice, m.beds, m.maxKm, m.minKm, m.zones, m.wants])
+               !== JSON.stringify([c.budget, c.minPrice, c.beds, c.maxKm, c.minKm, c.zones, c.wants]);
+  return { c: m, carried, note, moved };
+}
+
 const MISSING_LABEL = {
   school: ['学区 / 学校', 'school zones'], crime: ['治安', 'crime'],
   ethnicity: ['族裔构成', 'ethnic makeup'], hazard: ['洪水 / 地质风险', 'flood and landslide risk'],
@@ -1894,6 +2015,12 @@ function scoreSuburb(s, c) {
   if (c.zones.length && !c.zones.includes(s.z)) return null;
   if (c.suburbs.length && !c.suburbs.includes(s.n)) return null;
   if (c.maxKm && s.km > c.maxKm) return null;
+  // Floors, set only by a follow-up asking to move up or out. They are gates
+  // like the budget is, not weights: "dearer than those" is not satisfied by
+  // scoring the same suburbs slightly differently and handing them back.
+  if (c.minPrice && !(s.dt.q[1] > c.minPrice)) return null;
+  if (c.maxPrice && !(s.dt.q[1] < c.maxPrice)) return null;
+  if (c.minKm && !(s.km > c.minKm)) return null;
   // Asking for a house with a yard rules out a suburb that is essentially all
   // flats, however well it fits the budget.
   if (c.wants.includes('land') && (s.hs ?? 0) < 0.20) return null;
@@ -2076,7 +2203,7 @@ const TOPIC_WORDS = [
   'neighborhood', 'commute', 'school', 'section', 'land', 'bedroom', 'auckland',
 ];
 const OFFTOPIC_SHAPES = [
-  /写(一[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
+  /写(一?[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
   /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume|summar[iy])\b/i,
   /\b(who|what|when|where|why)\s+(is|are|was|were)\b(?!.*\b(suburb|area|price|budget)\b)/i,
   /python|javascript|sql|html|api|regex/i,
@@ -2098,10 +2225,23 @@ function topicSignals(text, c) {
   return n;
 }
 
-function offTopic(text, c) {
-  if (topicSignals(text, c) >= 2) return false;
-  if (OFFTOPIC_SHAPES.some(re => re.test(text))) return true;
-  return topicSignals(text, c) === 0 && text.trim().length > 4;
+// Continuations carry no topic word of their own — that is what makes them
+// continuations — so they are recognised rather than scored.
+function isFollowUp(text, last = AI.last) {
+  return !!last && (FOLLOW_UP.test(text) || Object.values(SHIFT).some(re => re.test(text)));
+}
+
+// `raw` is what this message says on its own; `merged` is that plus everything
+// still standing from earlier. The two are kept apart deliberately. Carried
+// criteria are sticky, so scoring the shape check against them would mean that
+// once a budget had been mentioned, every later message scored two and nothing
+// could ever be refused again. Scoring it against `raw` alone would be wrong in
+// the other direction — "我想写下预算 110 万" is a budget, not a writing task.
+function offTopic(text, raw, merged = raw, last = AI.last) {
+  if (OFFTOPIC_SHAPES.some(re => re.test(text)) && topicSignals(text, raw) < 2) return true;
+  if (topicSignals(text, merged) >= 2) return false;
+  if (isFollowUp(text, last)) return false;
+  return topicSignals(text, raw) === 0 && text.trim().length > 4;
 }
 
 function refuse() {
@@ -2198,10 +2338,15 @@ function renderRec(r, c, rank, why) {
 function describeCriteria(c) {
   const bits = [];
   if (c.budget) bits.push(L(`预算 <b>${fmt(c.budget)}</b>`, `budget <b>${fmt(c.budget)}</b>`));
+  if (c.minPrice) bits.push(L(`入门价高于 <b>${fmt(c.minPrice)}</b>`,
+                              `entry price above <b>${fmt(c.minPrice)}</b>`));
+  if (c.maxPrice) bits.push(L(`入门价低于 <b>${fmt(c.maxPrice)}</b>`,
+                              `entry price below <b>${fmt(c.maxPrice)}</b>`));
   if (c.beds) bits.push(L(`${c.beds} 房`, `${c.beds} bed`));
   if (c.zones.length) bits.push(c.zones.map(zoneL).join(' / '));
   if (c.suburbs.length) bits.push(c.suburbs.join(' / '));
   if (c.maxKm) bits.push(L(`离市中心 ≤ ${c.maxKm} km`, `within ${c.maxKm} km of the city`));
+  if (c.minKm) bits.push(L(`离市中心 > ${c.minKm} km`, `beyond ${c.minKm} km from the city`));
   const labels = LANG === 'zh'
     ? { invest: '投资收租', quiet: '安静', land: '大地块', apartment: '公寓',
         commute: '通勤方便', coastal: '近海', growth: '看重升值', liquid: '好脱手',
@@ -2445,10 +2590,26 @@ async function handle(text) {
   AI.busy = true;
   $('#aiSend').disabled = true;
   say(text.replace(/</g, '&lt;'), 'msg-user');
-
-  const c = parseRequest(text);
-  const intent = readIntent(text, c);
   const done = () => { AI.busy = false; $('#aiSend').disabled = false; };
+
+  if (RESTART.test(text)) {
+    AI.last = null;
+    say(L('好，之前的条件都清掉了。重新告诉我<b>预算</b>和大致想住的区域就行。',
+          'Cleared. Tell me your <b>budget</b> and roughly where you want to be.'));
+    return done();
+  }
+
+  const raw = parseRequest(text);
+  // Intent is read from what was actually said this turn — a bare suburb name
+  // is a question about that suburb whether or not a budget is still standing
+  // from earlier. Everything after this point works off the merged criteria.
+  const intent = readIntent(text, raw);
+  const { c, carried, note: shiftNote, moved } = carryOver(text, raw);
+  // Criteria survive the turn; the arrays are copied so the next merge cannot
+  // be reached through this one.
+  const remember = names => {
+    AI.last = { c: JSON.parse(JSON.stringify(c)), names, text };
+  };
 
   // An aggregate is arithmetic over the dataset, and the page can do it
   // exactly. So it does — rather than asking the model for a number and then
@@ -2470,15 +2631,15 @@ async function handle(text) {
     // request for suburbs, which is usually what it turns out to be.
   }
 
-  if (offTopic(text, c)) { refuse(); return done(); }
+  if (offTopic(text, raw, c)) { refuse(); return done(); }
 
   let picks = null, lead = null, modelWhy = new Map(), dropped = 0;
   if (MODEL_ON) {
-    const out = await askModel(text).catch(() => null);
+    const out = await askModel(text, c, AI.last).catch(() => null);
     // Advisory only. The model tends to read "I have no school data" as "not my
     // subject"; a stated budget or area says otherwise, and the local signal is
     // the more reliable judge of whether this is a property question at all.
-    if (out && out.on_topic === false && topicSignals(text, c) < 2) {
+    if (out && out.on_topic === false && topicSignals(text, c) < 2 && !isFollowUp(text)) {
       refuse();
       AI.busy = false; $('#aiSend').disabled = false; return;
     }
@@ -2511,7 +2672,11 @@ async function handle(text) {
     }
   }
 
-  say(L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`));
+  say(L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`) +
+      (carried ? ` <span class="muted-note">${L(
+        '（接着上一轮，之前说过的条件还在。说「重新开始」可以清掉）',
+        '(carried over from your last message — say "start over" to clear it)')}</span>` : ''));
+  if (shiftNote) say(`<span class="muted-note">${shiftNote}</span>`);
   // Repayments are arithmetic the page does itself, so answer it here rather
   // than letting the model near a number it has no source for.
   if (c.finance)
@@ -2528,7 +2693,8 @@ async function handle(text) {
     say(`<span class="muted-note">${L(`（有 ${dropped} 个模型给的区入门价超出预算，已剔除）`,
                                       `(${dropped} suggestion(s) priced above the budget were dropped)`)}</span>`);
 
-  const usable = c.budget || c.beds || c.zones.length || c.maxKm || c.wants.length;
+  const usable = c.budget || c.minPrice || c.maxPrice || c.beds || c.zones.length
+             || c.maxKm || c.minKm || c.wants.length;
   if (!picks && !usable && c.missing.length) {
     say(L('我能按<b>价格、户型、地块大小、离市中心距离、租金回报、成交活跃度</b>帮你筛。' +
           '给个预算或大致区域，我就能开始。',
@@ -2558,6 +2724,7 @@ async function handle(text) {
       say(`<span class="muted-note">${L(
         '数字全部来自本页数据集，跟郊区详情页是同一份。',
         'Every figure comes from this page\u2019s own dataset — the same one behind the suburb detail view.')}</span>`);
+      remember(list.map(s => s.n));
       return done();
     }
   }
@@ -2568,12 +2735,31 @@ async function handle(text) {
                       .sort((x, y) => y.total - x.total);
     if (!scored.length) {
       say(L('按这些条件<b>没有</b>匹配的郊区。', '<b>No</b> suburb matches all of that.') + diagnose(c));
+      remember([]);
       AI.busy = false; $('#aiSend').disabled = false; return;
     }
     if (c.wants.includes('cheap') && !c.budget) {
       picks = [...scored].sort((x, y) => x.s.dt.q[1] - y.s.dt.q[1]).slice(0, 3);
       lead = lead || L(`按<b>最便宜</b>排的（比的是各区 25% 分位的 CV，也就是入门价）。符合条件的有 ${scored.length} 个区：`,
                        `Sorted <b>cheapest first</b>, by each suburb's 25th-percentile CV — its entry price. ${scored.length} suburbs match:`);
+    // The move the reader just asked for wins the framing. Sorting by whichever
+    // constraint happens to come first in this chain would answer "further out"
+    // with "a step up", because the price floor from two turns ago is still on.
+    } else if ((moved === 'dearer' || (!moved && c.minPrice)) && c.minPrice) {
+      // Nearest first, not dearest first. "Dearer" means one step up from what
+      // was just offered; sorting by score here would have answered it with the
+      // top of the Auckland market, which is not what was asked.
+      picks = [...scored].sort((x, y) => x.s.dt.q[1] - y.s.dt.q[1]).slice(0, 3);
+      lead = lead || L(`比刚才那批<b>贵一档</b>的，按入门价从低到高排，这几个最接近。够得着的有 ${scored.length} 个区：`,
+                       `A <b>step up</b> from the last set, nearest first by entry price — ${scored.length} above it:`);
+    } else if ((moved === 'cheaper' || (!moved && c.maxPrice)) && c.maxPrice) {
+      picks = [...scored].sort((x, y) => y.s.dt.q[1] - x.s.dt.q[1]).slice(0, 3);
+      lead = lead || L(`比刚才那批<b>便宜一档</b>的，按入门价从高到低排，这几个最接近。符合条件的有 ${scored.length} 个区：`,
+                       `A <b>step down</b> from the last set, nearest first by entry price — ${scored.length} below it:`);
+    } else if ((moved === 'further' || (!moved && c.minKm)) && c.minKm) {
+      picks = [...scored].sort((x, y) => x.s.km - y.s.km).slice(0, 3);
+      lead = lead || L(`比刚才那批<b>更靠外</b>的，按距离从近到远排，这几个最接近。符合条件的有 ${scored.length} 个区：`,
+                       `<b>Further out</b> than the last set, nearest first — ${scored.length} beyond it:`);
     } else if (c.budget) {
       picks = scored.slice(0, 3);
       lead = lead || L(`按预算优先筛下来，${scored.length} 个郊区够得着，这 3 个最合适：`,
@@ -2594,6 +2780,7 @@ async function handle(text) {
   say(L('把鼠标放在上面任一个区，会在奥克兰地图上圈出它的位置；点按钮才进入该区的热力图。',
         'Hover any of them to outline it on the Auckland map; click the button to open that suburb’s heat map.'));
 
+  remember(picks.map(r => r.s.n));
   AI.busy = false;
   $('#aiSend').disabled = false;
 }
@@ -2667,7 +2854,15 @@ function figuresCheckOut(text, facts) {
   // 5.8%" landed within 0.6 of the growth figure and passed as if it had been
   // copied from the row. A checker that does not care which field a number
   // came from has to be tight enough that it cannot arrive at a different one.
-  const tolFor = v => (v >= 1000 ? Math.max(5000, v * 0.02) : 0.15);
+  //
+  // The money tolerance was 2% of the value, which on a $770,000 entry price is
+  // $15,400 of room to invent in. Measured against the live model over 15 money
+  // figures, 14 were copied exactly and the one that was not was off by $10,000
+  // — inside the old tolerance, so it would have been shown to a reader as
+  // verified. The model does not write approximations, so nothing legitimate
+  // needed that much room. 0.2% with a $500 floor still absorbs a rounded
+  // population but not a fabricated price.
+  const tolFor = v => (v >= 1000 ? Math.max(500, v * 0.002) : 0.15);
 
   for (const m of text.matchAll(/(\$\s?)?(\d[\d,]*(?:\.\d+)?)\s*([kKmM]\b|%|公里|km)?/g)) {
     const unit = m[3] || '';
@@ -2713,11 +2908,36 @@ function claimsCheckOut(text, name) {
   return true;
 }
 
-async function askModel(text) {
+// What the page has understood so far, in the model's own terms. This is how a
+// follow-up reaches the model at all: it is still sent a single turn, but the
+// turn carries the standing criteria and what was offered last time, so "any
+// dearer?" arrives as a question it can actually answer. Sending the criteria
+// rather than the transcript keeps the page the authority on what was decided,
+// and keeps the 7k-token table from being re-sent per turn of history.
+function modelContext(c, last) {
+  const b = [];
+  if (c.budget)   b.push(`budget up to ${c.budget}`);
+  if (c.minPrice) b.push(`only suburbs whose entry_price is above ${c.minPrice}`);
+  if (c.maxPrice) b.push(`only suburbs whose entry_price is below ${c.maxPrice}`);
+  if (c.beds)     b.push(`${c.beds} bedrooms`);
+  if (c.zones.length) b.push(`zones: ${c.zones.join(', ')}`);
+  if (c.maxKm)    b.push(`within ${c.maxKm} km of the CBD`);
+  if (c.minKm)    b.push(`more than ${c.minKm} km from the CBD`);
+  if (c.wants.length) b.push(`wants: ${c.wants.join(', ')}`);
+  const parts = [];
+  if (b.length) parts.push(`Criteria the reader has given, this turn and earlier: ${b.join('; ')}.`);
+  if (last && last.names && last.names.length)
+    parts.push(`Last turn you offered: ${last.names.join(', ')}. ` +
+               `The reader's message is a follow-up to that — read it relative to those suburbs, ` +
+               `and do not offer the same ones again unless asked to.`);
+  return parts.join('\n');
+}
+
+async function askModel(text, c, last) {
   const res = await fetch(DATA.proxy, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, ...suburbTable() }),
+    body: JSON.stringify({ text, context: modelContext(c, last), ...suburbTable() }),
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
@@ -2748,6 +2968,7 @@ document.querySelectorAll('#aiChips button').forEach(b =>
 
 function resetAssistant() {
   $('#aiLog').innerHTML = '';
+  AI.last = null;
   say(L('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，并说清每个区的好处和代价。<br>价格口径：平均估值与议会 CV，都不是成交价。',
         'Tell me your <b>budget</b> and roughly where you want to be. I shortlist suburbs budget-first and spell out what each one costs you.<br>All figures are estimates — automated valuations and council CVs, not sale prices.'));
 }

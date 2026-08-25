@@ -11,8 +11,11 @@
  *
  *   npx wrangler secret put GEMINI_API_KEY
  *
- * The page sends the question and every suburb it has data for — about 205 rows,
- * roughly 7k tokens as a field list plus arrays. The model does the choosing,
+ * The page sends the question, the criteria it has accumulated over the
+ * conversation so far, and every suburb it has data for — about 205 rows,
+ * roughly 7k tokens as a field list plus arrays. Criteria rather than a
+ * transcript: the page stays the authority on what was decided, and the table
+ * is not re-sent once per turn of history. The model does the choosing,
  * so a suburb is not ruled out by a regex in the page failing to notice "east"
  * or "cheap". It still cannot invent: names are checked against the table it was
  * given, and every figure it writes is checked against that suburb's own row
@@ -37,7 +40,7 @@ const TOPIC_WORDS = [
   'bedroom', 'auckland', 'cheap', 'afford',
 ];
 const OFFTOPIC = [
-  /写(一[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
+  /写(一?[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
   /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume)\b/i,
   /python|javascript|sql|html|api|regex/i,
   /天气|新闻|股票|翻译成|怎么做菜/,
@@ -48,12 +51,21 @@ const SYS = `You advise on choosing an Auckland suburb, and nothing else.
 You are given the reader's question and every Auckland suburb the page has data
 for, as a field list and one array per suburb. All figures are real.
 
+A "Conversation so far" block may come first. That is what the page has already
+established with this reader, and it is authoritative — treat those criteria as
+if the reader had just restated them. Their latest message is then usually a
+follow-up to it: "有没有贵一点的", "再远一点", "那第二个呢" are complete
+requests in that setting, and are read against the suburbs you offered last
+turn. When the block says which suburbs those were, do not offer the same ones
+again unless the reader asks about them.
+
 on_topic is false ONLY when the request has nothing to do with choosing where to
 live in Auckland — code, translation, chit-chat, general knowledge. A property
 question you can only partly answer is still on topic: answer the part the table
 supports, say plainly which part it does not, and still return picks. Asking for
 "the best school zone under $2m" means picking on price and housing type while
-stating that school data is absent — not refusing.
+stating that school data is absent — not refusing. A short follow-up to a
+conversation block is never off topic, however little it says on its own.
 
 Your job:
 - Read the whole table and choose the suburbs that genuinely answer the question.
@@ -119,9 +131,22 @@ function json(body, status, headers) {
   });
 }
 
-function offTopic(text) {
-  const t = text.toLowerCase();
-  if (OFFTOPIC.some(re => re.test(text))) return true;
+// The page sends the criteria it has accumulated along with the message, so a
+// follow-up is scored against the conversation rather than against five words.
+// Judged on the message alone, "有没有贵一点的" carries no topic word and no
+// digit and was refused here — the reader had said what they wanted one turn
+// earlier and this endpoint had no way to know it.
+//
+// An off-topic shape is still refused on the message alone: standing criteria
+// must not buy a pass for "and write me a poem".
+function offTopic(text, context) {
+  // An off-topic shape is refused on the message alone — standing criteria must
+  // not buy a pass for "and write me a poem" — but only when the message says
+  // nothing about property itself. "我想写下预算 110 万" contains 写下 and is
+  // still a budget.
+  const own = TOPIC_WORDS.some(w => text.toLowerCase().includes(w)) || /\d/.test(text);
+  if (!own && OFFTOPIC.some(re => re.test(text))) return true;
+  const t = (text + ' ' + (context || '')).toLowerCase();
   return !(TOPIC_WORDS.some(w => t.includes(w)) || /\d/.test(t));
 }
 
@@ -155,8 +180,9 @@ export default {
     let body;
     try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
     const text = String(body.text || '').slice(0, MAX_CHARS).trim();
+    const context = String(body.context || '').slice(0, MAX_CHARS * 2).trim();
     if (!text) return json({ error: 'empty request' }, 400, headers);
-    if (offTopic(text)) return json({ on_topic: false }, 200, headers);
+    if (offTopic(text, context)) return json({ on_topic: false }, 200, headers);
 
     if (env.RATE_LIMIT) {
       const ip = request.headers.get('cf-connecting-ip') || 'anon';
@@ -166,11 +192,12 @@ export default {
     if (!env.GEMINI_API_KEY) return json({ error: 'proxy not configured' }, 500, headers);
 
     const table = cleanTable(body);
+    const ctx = context ? `Conversation so far (established by the page, authoritative):\n${context}\n\n` : '';
     const prompt = table.rows.length
-      ? `Reader's question:\n${text}\n\nfields: ${JSON.stringify(table.fields)}\n` +
+      ? `${ctx}Reader's latest message:\n${text}\n\nfields: ${JSON.stringify(table.fields)}\n` +
         `rows (${table.rows.length} suburbs, all figures real):\n${
           table.rows.map(r => JSON.stringify(r)).join('\n')}`
-      : `Reader's question:\n${text}\n\n(No suburb data was sent — say so.)`;
+      : `${ctx}Reader's latest message:\n${text}\n\n(No suburb data was sent — say so.)`;
 
     const upstream = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${

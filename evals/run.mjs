@@ -26,7 +26,7 @@ const w = dom.window;
 await new Promise((r) => setTimeout(r, 800));
 
 for (const fn of ["parseRequest", "readIntent", "figuresCheckOut",
-                  "claimsCheckOut", "factsFor", "offTopic"]) {
+                  "claimsCheckOut", "factsFor", "offTopic", "carryOver"]) {
   if (typeof w[fn] !== "function") {
     console.error(`${fn} is not on the page — the harness is testing nothing`);
     process.exit(2);
@@ -62,6 +62,28 @@ for (const c of cases) {
     } else if (c.kind === "refuse") {
       got = w.offTopic(c.input, w.parseRequest(c.input));
       ok = got === c.expect;
+    } else if (c.kind === "follow") {
+      // Replay the turns the way handle() does: parse this one, merge it into
+      // what the last one settled on, then decide whether to refuse. `offered`
+      // supplies the suburbs each turn came back with, so a case about "dearer"
+      // does not also depend on the scorer picking the same three today.
+      let last = null, refused = false, merged = null;
+      c.turns.forEach((t, i) => {
+        if (refused) return;
+        const raw = w.parseRequest(t);
+        merged = w.carryOver(t, raw, last).c;
+        refused = w.offTopic(t, raw, merged, last);
+        if (refused) return;
+        last = { c: JSON.parse(JSON.stringify(merged)),
+                 names: (c.offered || [])[i] || [], text: t };
+      });
+      const want = c.expect.criteria || {};
+      // `true` in a case means "set to something", for values that depend on
+      // the dataset — the floor for "dearer" is whatever those suburbs cost.
+      const seen = Object.fromEntries(Object.keys(want).map((k) =>
+        [k, want[k] === true ? !!merged[k] : merged[k]]));
+      got = { refused, ...seen };
+      ok = refused === c.expect.refused && eq(seen, want);
     } else {
       throw new Error(`unknown kind ${c.kind}`);
     }
