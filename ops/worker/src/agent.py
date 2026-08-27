@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import re
+from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -18,7 +19,7 @@ Hard rules:
 1. Your only factual source is the current request's project dataset, accessed through the supplied tools. Never use web search, memory, general Auckland knowledge, assumptions, or unstated causal explanations.
 2. Call one or more relevant project-data tools before every on-topic factual response. For a named suburb use lookup_suburbs. For recommendations/rankings use filter_suburbs. For aggregates use summarize_suburbs. For data definitions use describe_dataset. For a derived difference, ratio, mean or percentage, first retrieve the inputs and then use calculate_project_values.
 3. If the tools do not contain the requested fact, say exactly that the project dataset cannot support it. Do not fill gaps.
-4. Answer in the user's language. Be direct, useful, and free-form; you may explain, compare, calculate from returned values, or recommend, so long as every factual claim is grounded.
+4. Answer in the explicit required response language stated at the start of the current HumanMessage. That language is computed only from the current user question. Never infer it from history, context, wrapper labels, tool output, or suburb data. Be direct, useful, and free-form; you may explain, compare, calculate from returned values, or recommend, so long as every factual claim is grounded.
 5. Only recommend suburbs that genuinely help. Every suburb name must exactly match a tool-returned project suburb name. Do not pad the list.
 6. Copy every exact fact label used into citations. Every significant number in answer or picks.why must come from a cited tool fact.
 7. entry_price is the 25th-percentile 2024 council CV, not a listing price or guaranteed purchase price. median_cv and avg_value are valuations, not sale prices. cbd_km is straight-line distance.
@@ -38,18 +39,62 @@ FINAL_RESPONSE_TOOL = {
     "parameters": AGENT_RESPONSE_SCHEMA,
 }
 
+ResponseLanguage = Literal["English", "Chinese"]
+_HAN_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
-def _conversation_prompt(text: str, context: str, history: list[dict[str, str]]) -> str:
+
+def detect_response_language(text: str) -> ResponseLanguage:
+    """Choose the response language from this turn's question, not UI context."""
+    return "Chinese" if _HAN_PATTERN.search(text) else "English"
+
+
+def _validate_response_language(
+    result: dict[str, Any], required_language: ResponseLanguage
+) -> None:
+    """Reject a final answer in the wrong language so the Agent can repair it."""
+    reader_text = "\n".join(
+        [
+            str(result.get("answer", "")),
+            *(str(pick.get("why", "")) for pick in result.get("picks", [])),
+            *(str(item) for item in result.get("limitations", [])),
+        ]
+    )
+    contains_han = bool(_HAN_PATTERN.search(reader_text))
+    if required_language == "English" and contains_han:
+        raise ValueError(
+            "Final reader-facing text must be entirely in English for this turn"
+        )
+    if required_language == "Chinese" and not contains_han:
+        raise ValueError(
+            "Final reader-facing text must be in Chinese for this turn"
+        )
+
+
+def _conversation_prompt(
+    text: str,
+    context: str,
+    history: list[dict[str, str]],
+    required_language: ResponseLanguage,
+) -> str:
     history_text = "\n".join(
-        f"{'用户' if turn['role'] == 'user' else '助手'}：{turn['content']}"
+        f"{'User' if turn['role'] == 'user' else 'Assistant'}: {turn['content']}"
         for turn in history
     )
-    sections = []
+    sections = [
+        f"Required response language: {required_language}.\n"
+        "This requirement comes only from the current user question and overrides "
+        "the language of history, context, and tool data."
+    ]
     if history_text:
-        sections.append(f"最近对话（仅用于理解指代与偏好）：\n{history_text}")
+        sections.append(
+            "Recent conversation (only for resolving references and preferences):\n"
+            f"{history_text}"
+        )
     if context:
-        sections.append(f"浏览器端已解析偏好（不是事实来源）：\n{context}")
-    sections.append(f"本轮用户问题：\n{text}")
+        sections.append(
+            f"Browser-parsed preferences (not a factual source):\n{context}"
+        )
+    sections.append(f"Current user question:\n{text}")
     return "\n\n".join(sections)
 
 
@@ -65,6 +110,7 @@ async def _run_tool_agent(
     model: GeminiWorkerChatModel,
     dataset: Dataset,
     prompt: str,
+    required_language: ResponseLanguage,
 ) -> dict[str, Any]:
     dataset_tools, tool_session = create_dataset_tools(dataset)
     tools_by_name = {tool.name: tool for tool in dataset_tools}
@@ -119,7 +165,9 @@ async def _run_tool_agent(
                         **dataset_definition_facts(dataset),
                         **collect_tool_facts(messages),
                     }
-                    return ground_agent_response(arguments, dataset, facts)
+                    grounded = ground_agent_response(arguments, dataset, facts)
+                    _validate_response_language(grounded, required_language)
+                    return grounded
                 except Exception as error:  # noqa: BLE001 - feedback lets the model repair output.
                     messages.append(
                         ToolMessage(
@@ -160,6 +208,7 @@ async def run_dataset_agent(
     context: str,
     history: list[dict[str, str]],
 ) -> dict[str, Any]:
+    required_language = detect_response_language(text)
     model = GeminiWorkerChatModel(
         api_key=api_key,
         model_name=model_name,
@@ -170,5 +219,6 @@ async def run_dataset_agent(
     return await _run_tool_agent(
         model,
         dataset,
-        _conversation_prompt(text, context, history),
+        _conversation_prompt(text, context, history, required_language),
+        required_language,
     )
