@@ -40,3 +40,5 @@
 {"id": "figures-invented-entry-price", "kind": "figures", "suburb": "Takanini", "text": "入门价为 $780,000，符合您的预算要求，租金回报率为 4.2%", "expect": false, "why": "the live model wrote this on the first real call after the proxy went up — Takanini's entry price is $770,000. The old 2% money tolerance passed it as verified"}
 {"id": "figures-invented-entry-price-2", "kind": "figures", "suburb": "Orewa", "text": "入门价 $900,000，周租金中位 $735", "expect": false, "why": "same slip on Orewa, real entry price $910,000 — $10,000 out, inside the old tolerance"}
 {"id": "figures-exact-still-passes", "kind": "figures", "suburb": "Takanini", "template": "入门价为 $%s，租金回报率为 4.2%", "field": "entry_price", "expect": true, "why": "tightening the tolerance must not reject a figure copied correctly"}
+{"id": "model-answer-escapes-html", "kind": "modelhtml", "input": "<img src=x onerror=alert(1)>", "expect": "&lt;img src=x onerror=alert(1)&gt;", "why": "free-form Agent text must never become executable page markup"}
+{"id": "model-answer-preserves-lines", "kind": "modelhtml", "input": "第一行\n第二行", "expect": "第一行<br>第二行", "why": "escaped free-form answers still need readable paragraphs"}

@@ -1754,15 +1754,14 @@ calcPanel().addEventListener('toggle', () =>
 
 /* ==========================================================================
    选房助手
-   Budget is a hard gate, not a weight. Every claim a recommendation makes is
-   computed from the payload — the optional LLM only reads the request and
-   writes the intro sentence; it never picks suburbs and never states a number.
+   The hosted path is a LangChain data agent; this page remains responsible for
+   interactive cards, calculators, local verification and the offline fallback.
    ========================================================================== */
 // last holds what the previous turn settled on, so a follow-up is read against
 // it instead of from nothing. Without it every turn re-parsed one sentence in
 // isolation: "somewhere by the sea" scored two topic signals and answered,
 // then "anywhere dearer?" scored zero and was refused as chit-chat.
-const AI = { busy: false, last: null };
+const AI = { busy: false, last: null, history: [] };
 
 /* ---------- budget: share of a suburb's stock within budget ---------- */
 // The detail payload carries a 24-bin log-spaced histogram of council capital
@@ -1887,9 +1886,8 @@ function parseRequest(text) {
    they wanted one sentence earlier and the page had thrown it away.
 
    So the criteria persist across turns and a follow-up is merged into them.
-   The model still sees a single turn: what it is sent is the merged intent,
-   restated by the page. That keeps the existing division of labour — the page
-   decides, the model reads — and costs nothing per turn. */
+   The Agent receives that structured context plus a small, bounded recent
+   history; neither is accepted as factual evidence. */
 
 // A relative move only means something against what was just offered: "dearer"
 // is dearer than those three, not dearer in the abstract.
@@ -2205,7 +2203,7 @@ const TOPIC_WORDS = [
 ];
 const OFFTOPIC_SHAPES = [
   /写(一?[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
-  /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume|summar[iy])\b/i,
+  /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume)\b/i,
   /\b(who|what|when|where|why)\s+(is|are|was|were)\b(?!.*\b(suburb|area|price|budget)\b)/i,
   /python|javascript|sql|html|api|regex/i,
   /天气|新闻|股票|币|翻译成|怎么做菜/,
@@ -2246,13 +2244,11 @@ function offTopic(text, raw, merged = raw, last = AI.last) {
 }
 
 function refuse() {
-  say(L('我只做一件事：<b>按预算帮你在奥克兰挑 suburb</b>，别的问题我不回答。<br>' +
-        '可以这样问我：「预算 110 万，三房，北岸」「90 万投资，看重租金回报」。<br>' +
-        '也可以先说个大概，再接着调：「我想住海边」→「有没有贵一点的」。',
-        'I do one thing: <b>shortlist Auckland suburbs against a budget</b>. ' +
-        'Anything else I will not answer.<br>Try: "$1.1m, 3 bedrooms, North Shore", ' +
-        '"$900k to invest, want yield".<br>' +
-        'Or start rough and refine: "somewhere near the beach" → "anything dearer?".'));
+  say(L('我只回答<b>本项目数据能支持的奥克兰住宅与 suburb 问题</b>。<br>' +
+        '可以问：「预算 110 万，三房，北岸」「90 万投资，看重租金回报」「中区入门价中位数是多少」。',
+        'I only answer <b>Auckland housing and suburb questions supported by this project’s data</b>.<br>' +
+        'Try: "$1.1m, 3 bedrooms, North Shore", "$900k to invest, want yield", ' +
+        'or "what is the median entry price in Central?".'));
 }
 
 // Outline a recommendation on the region map while the pointer is on its card.
@@ -2294,6 +2290,14 @@ function say(html, cls = 'msg-ai') {
   return d;
 }
 
+// Agent text is data, never markup. Cards and local explanations deliberately
+// use HTML, so escaping belongs at this boundary rather than inside say().
+function modelHtml(text) {
+  return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    .replace(/\n/g, '<br>');
+}
+
 // "Can I buy here" and "can I carry it every month" are different questions,
 // and the second is the one that actually stops people. Quoted at the entry
 // price, on whatever assumptions the calculator currently holds, so the two
@@ -2324,7 +2328,7 @@ function renderRec(r, c, rank, why) {
     <div class="cost">${costLine(s)}</div>
     ${r.a === null ? '' : `<div class="fitbar"><i style="width:${(r.a * 100).toFixed(0)}%"></i></div>
       <div class="fitcap">${L(`预算内可选 ${(r.a * 100).toFixed(0)}% 的房子`, `${(r.a * 100).toFixed(0)}% of homes fit the budget`)}</div>`}
-    ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
+    ${why ? `<p class="why">${modelHtml(why)}</p>` : ''}
     <ul>${pc.pro.map(x => `<li class="pro">${x}</li>`).join('')}
         ${pc.con.map(x => `<li class="con">${x}</li>`).join('')}</ul>
     <button class="go">${L(`打开 ${s.n} 热力图 →`, `Open ${s.n} heat map →`)}</button>`;
@@ -2370,12 +2374,10 @@ function describeCriteria(c) {
      shortlist  criteria -> ranked suburbs           (what it always did)
      assess     one suburb -> what it is like
      compare    two or more -> where they differ
-     explain    a question about the data -> computed here, not by the model
+     explain    a question about the data -> Agent, or local fallback
 
-   The verification contract is untouched, deliberately. assess and compare
-   still come back as picks[].why, one paragraph per suburb, so every figure is
-   still checked against that suburb's own row. explain is computed from the
-   dataset and never asks the model for a number at all.
+   Hosted answers may also finish as free-form data answers without cards. Card
+   prose keeps the browser's older row checks in addition to server grounding.
    ========================================================================== */
 const ASK_WORDS = /怎么样|怎样|如何|值得|好不好|评价|介绍|说说|讲讲|了解|what.?s .* like|how is|how's|tell me about|worth|describe/i;
 const CMP_WORDS = /哪个|那个|对比|比较|相比|还是|vs\.?|versus|compare|better|which of/i;
@@ -2470,7 +2472,7 @@ function renderAssess(s, c, why) {
     <div class="top"><span class="nm">${s.n}</span>
       <span class="zn">${zoneL(s.z)}${s.km == null ? '' : ' · ' + s.km + ' km'}</span></div>
     <p class="verdict">${b.verdict}</p>
-    ${why ? `<p class="why">${why.replace(/</g, '&lt;')}</p>` : ''}
+    ${why ? `<p class="why">${modelHtml(why)}</p>` : ''}
     <div class="dstats astats">${b.stats}</div>
     <div class="citehint">${L('带下划线的指标可以悬停，看它到底量的是什么',
                               'Hover an underlined figure to see what it actually measures')}</div>
@@ -2596,6 +2598,7 @@ async function handle(text) {
 
   if (RESTART.test(text)) {
     AI.last = null;
+    AI.history = [];
     say(L('好，之前的条件都清掉了。重新告诉我<b>预算</b>和大致想住的区域就行。',
           'Cleared. Tell me your <b>budget</b> and roughly where you want to be.'));
     return done();
@@ -2609,8 +2612,13 @@ async function handle(text) {
   const { c, carried, note: shiftNote, moved } = carryOver(text, raw);
   // Criteria survive the turn; the arrays are copied so the next merge cannot
   // be reached through this one.
-  const remember = names => {
+  const remember = (names, assistantText = '') => {
     AI.last = { c: JSON.parse(JSON.stringify(c)), names, text };
+    if (assistantText) {
+      AI.history.push({ role: 'user', content: text },
+                      { role: 'assistant', content: assistantText });
+      AI.history = AI.history.slice(-8);
+    }
   };
 
   // An aggregate is arithmetic over the dataset, and the page can do it
@@ -2620,7 +2628,7 @@ async function handle(text) {
   // Tried before the off-topic gate, deliberately: a question this page can
   // answer from its own data is on topic by definition, and "how much is the
   // East" was being refused for want of a budget or a suburb name.
-  if (intent === 'explain') {
+  if (!MODEL_ON && intent === 'explain') {
     const ans = explainAnswer(text);
     if (ans) {
       say(ans);
@@ -2633,11 +2641,12 @@ async function handle(text) {
     // request for suburbs, which is usually what it turns out to be.
   }
 
-  if (offTopic(text, raw, c)) { refuse(); return done(); }
+  const obviousOffTopic = OFFTOPIC_SHAPES.some(re => re.test(text)) && topicSignals(text, raw) < 2;
+  if (MODEL_ON ? obviousOffTopic : offTopic(text, raw, c)) { refuse(); return done(); }
 
-  let picks = null, lead = null, modelWhy = new Map(), dropped = 0;
+  let picks = null, lead = null, modelAnswer = '', modelWhy = new Map(), dropped = 0;
   if (MODEL_ON) {
-    const out = await askModel(text, c, AI.last).catch(() => null);
+    const out = await askModel(text, c, AI.last, AI.history).catch(() => null);
     // Advisory only. The model tends to read "I have no school data" as "not my
     // subject"; a stated budget or area says otherwise, and the local signal is
     // the more reliable judge of whether this is a property question at all.
@@ -2645,15 +2654,16 @@ async function handle(text) {
       refuse();
       AI.busy = false; $('#aiSend').disabled = false; return;
     }
-    if (out && out.picks && out.picks.length) {
-      if (out.criteria) Object.assign(c, {
+    if (out && out.criteria) Object.assign(c, {
         budget: c.budget ?? out.criteria.budget ?? null,
         beds: c.beds ?? out.criteria.beds ?? null,
         maxKm: c.maxKm ?? out.criteria.maxKm ?? null,
         zones: c.zones.length ? c.zones : (out.criteria.zones || []),
         wants: [...new Set([...(c.wants || []), ...(out.criteria.wants || [])])],
       });
-      lead = (out.lead && claimsCheckOut(out.lead, null)) ? out.lead : null;
+    if (out) modelAnswer = typeof out.answer === 'string' ? out.answer
+                              : (typeof out.lead === 'string' ? out.lead : '');
+    if (out && out.picks && out.picks.length) {
       picks = [];
       for (const p of out.picks) {
         const x = byName.get(p.name);
@@ -2668,16 +2678,20 @@ async function handle(text) {
           modelWhy.set(p.name, p.why);
       }
       if (!picks.length) picks = null;
+      if (dropped) modelAnswer = '';
     } else if (!out) {
       say(`<span class="muted-note">${L('（AI 暂时不可用，已用本地规则推荐）',
                                         '(AI unavailable right now — using local rules)')}</span>`);
     }
   }
 
-  say(L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`) +
-      (carried ? ` <span class="muted-note">${L(
-        '（接着上一轮，之前说过的条件还在。说「重新开始」可以清掉）',
-        '(carried over from your last message — say "start over" to clear it)')}</span>` : ''));
+  const usable = c.budget || c.minPrice || c.maxPrice || c.beds || c.zones.length
+             || c.maxKm || c.minKm || c.wants.length;
+  if (picks || usable) say(
+    L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`) +
+    (carried ? ` <span class="muted-note">${L(
+      '（接着上一轮，之前说过的条件还在。说「重新开始」可以清掉）',
+      '(carried over from your last message — say "start over" to clear it)')}</span>` : ''));
   if (shiftNote) say(`<span class="muted-note">${shiftNote}</span>`);
   // Repayments are arithmetic the page does itself, so answer it here rather
   // than letting the model near a number it has no source for.
@@ -2695,8 +2709,16 @@ async function handle(text) {
     say(`<span class="muted-note">${L(`（有 ${dropped} 个模型给的区入门价超出预算，已剔除）`,
                                       `(${dropped} suggestion(s) priced above the budget were dropped)`)}</span>`);
 
-  const usable = c.budget || c.minPrice || c.maxPrice || c.beds || c.zones.length
-             || c.maxKm || c.minKm || c.wants.length;
+  // A data answer does not need to become a shortlist. Definitions, summaries,
+  // comparisons and explicit limitations can finish naturally without cards.
+  if (modelAnswer && !picks) {
+    say(modelHtml(modelAnswer));
+    remember([], modelAnswer);
+    return done();
+  }
+
+  if (modelAnswer) say(modelHtml(modelAnswer));
+
   if (!picks && !usable && c.missing.length) {
     say(L('我能按<b>价格、户型、地块大小、离市中心距离、租金回报、成交活跃度</b>帮你筛。' +
           '给个预算或大致区域，我就能开始。',
@@ -2726,7 +2748,7 @@ async function handle(text) {
       say(`<span class="muted-note">${L(
         '数字全部来自本页数据集，跟郊区详情页是同一份。',
         'Every figure comes from this page\u2019s own dataset — the same one behind the suburb detail view.')}</span>`);
-      remember(list.map(s => s.n));
+      remember(list.map(s => s.n), modelAnswer);
       return done();
     }
   }
@@ -2782,20 +2804,16 @@ async function handle(text) {
   say(L('把鼠标放在上面任一个区，会在奥克兰地图上圈出它的位置；点按钮才进入该区的热力图。',
         'Hover any of them to outline it on the Auckland map; click the button to open that suburb’s heat map.'));
 
-  remember(picks.map(r => r.s.n));
+  remember(picks.map(r => r.s.n), modelAnswer);
   AI.busy = false;
   $('#aiSend').disabled = false;
 }
 
 /* ---------- model layer ----------
-   The model is given the reader's question and a shortlist this page has already
-   filtered from its own data, with the real figures attached. It chooses among
-   them and explains why — that is genuine analysis, not phrasing.
-
-   What it still cannot do is invent. It only ever sees names from the shortlist,
-   and every figure it writes is checked against that suburb's own data before
-   the page will show it. A card whose reasoning fails the check falls back to
-   the rule-generated pros and cons, which are exact by construction. */
+   The Worker closes LangChain read-only tools over this request's table. It can
+   look up, filter, rank, aggregate and explain the project data without gaining
+   an external knowledge source. The page keeps a second verification layer and
+   the rule-generated fallback. */
 const MODEL_ON = !!DATA.proxy;
 
 // Every suburb with data, as a field list plus one array each — about 21 kB,
@@ -2910,12 +2928,9 @@ function claimsCheckOut(text, name) {
   return true;
 }
 
-// What the page has understood so far, in the model's own terms. This is how a
-// follow-up reaches the model at all: it is still sent a single turn, but the
-// turn carries the standing criteria and what was offered last time, so "any
-// dearer?" arrives as a question it can actually answer. Sending the criteria
-// rather than the transcript keeps the page the authority on what was decided,
-// and keeps the 7k-token table from being re-sent per turn of history.
+// What the page has understood so far. This remains useful alongside the short
+// recent history because relative moves such as "dearer" are resolved against
+// the exact prior cards here, before the Agent starts reasoning.
 function modelContext(c, last) {
   const b = [];
   if (c.budget)   b.push(`budget up to ${c.budget}`);
@@ -2935,11 +2950,11 @@ function modelContext(c, last) {
   return parts.join('\n');
 }
 
-async function askModel(text, c, last) {
+async function askModel(text, c, last, history) {
   const res = await fetch(DATA.proxy, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, context: modelContext(c, last), ...suburbTable() }),
+    body: JSON.stringify({ text, context: modelContext(c, last), history, ...suburbTable() }),
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
@@ -2947,13 +2962,9 @@ async function askModel(text, c, last) {
 }
 
 /* ---------- panel wiring ---------- */
-// Written when the proxy was unset and the model had never actually been
-// called, so "the AI only reads your request" was true. It picks the suburbs
-// now, and its wording is what you read when it survives the checks — saying
-// otherwise undersells it and, more to the point, is not true.
 $('#aiFoot').innerHTML = MODEL_ON
-  ? L(`AI 读你的话，从 ${priced.length} 个区里挑；它写的每个数字都经本页逐条核对，核不过就换回规则算出的理由。`,
-      `The AI reads your request and picks from all ${priced.length} suburbs; every figure it writes is checked against that suburb\u2019s own row, and anything that fails is replaced by the rule-generated version.`)
+  ? L(`LangChain AI 只通过只读工具查询本项目 ${priced.length} 个区的数据；引用、区名和数字都经过服务端与本页复核，失败时自动回退本地规则。`,
+      `The LangChain AI can only query this project\u2019s ${priced.length} suburbs through read-only tools; citations, names and figures are verified, with local rules as fallback.`)
   : L('全部由本页数据按规则算出。', 'Computed from this page\u2019s data by rule.');
 function openPanel() { $('#aiPanel').hidden = false; $('#aiToggle').hidden = true; $('#aiInput').focus(); }
 function closePanel() { $('#aiPanel').hidden = true; $('#aiToggle').hidden = false; }
@@ -2975,10 +2986,11 @@ document.querySelectorAll('#aiChips button').forEach(b =>
 function resetAssistant() {
   $('#aiLog').innerHTML = '';
   AI.last = null;
-  say(L('告诉我你的<b>预算</b>和想住的大致区域，我按预算优先给你筛郊区，并说清每个区的好处和代价。<br>' +
+  AI.history = [];
+  say(L('可以直接问我任何<b>本项目数据能回答</b>的奥克兰住宅问题，也可以告诉我预算和区域，让我筛选郊区并说清取舍。<br>' +
         '也可以慢慢说：先讲个大概，再用「<b>贵一点的</b>」「<b>再远一点</b>」接着调，我记着上一轮的条件；想清空就说「重新开始」。<br>' +
         '价格口径：平均估值与议会 CV，都不是成交价。',
-        'Tell me your <b>budget</b> and roughly where you want to be. I shortlist suburbs budget-first and spell out what each one costs you.<br>' +
+        'Ask anything this project\u2019s <b>Auckland housing data can support</b>, or give me a budget and area for a suburb shortlist with explicit trade-offs.<br>' +
         'You can also take it a step at a time: start rough, then say <b>"anything dearer"</b> or <b>"further out"</b> and I carry your criteria forward. Say "start over" to clear them.<br>' +
         'All figures are estimates — automated valuations and council CVs, not sale prices.'));
 }
@@ -2991,7 +3003,7 @@ function notesHtml() {
     <h2>免责声明</h2>
     <p style="margin:0 0 16px">个人研究项目，<b>不构成投资或购房建议</b>。页面上所有价格都是<b>估值</b>
       —— 自动估值模型与议会政府估价（CV）—— <b>不是成交价</b>，个体房产可能与之相差很大。
-      选房助手由 AI 读懂你的需求、从公开数据里挑区，它写的每个数字都经本页逐条核对；
+      选房助手由 LangChain AI 通过只读工具查询本项目数据；工具引用、地区名称与显著数字都会复核；
       但它不了解你的财务状况，也没有任何实地信息。
       做决定前请咨询持牌中介、注册估价师或财务顾问。</p>
     <h2>关于数据</h2>
@@ -3007,14 +3019,14 @@ function notesHtml() {
       <li><b>地税估算：</b>Auckland Council <span id="rateYear"></span> 年度。议会公布的是<b>平均账单</b>而不是税率明细，所以页面上那四项是按它逐项公布的涨跌反推，并钉死在它唯一说明确的数上：均价住宅 CV <span id="rateAvgCv"></span> 今年缴 <span id="rateAvgTotal"></span>。<b>锚点上是准确的，离开锚点是估算。</b>另外两点常被搞混：地税按<b>政府估价 CV</b> 计，不按你的买价，买贵了不会立刻涨；<b>水费和污水费由 Watercare 单独收取</b>，不在地税里。以自己的房子为准请查议会的地税查询。</li>
       <li><b>覆盖范围：</b>共 <span id="nTotal"></span> 个郊区/地区，其中 <span id="nPriced"></span> 个有价格数据。斜纹区块无价格数据，多为农村、林地、机场、医院等，但也包含少数住宅区（如 Western Springs、Westgate、Hillpark、Wairau Valley）——价格源未收录。大堡岛（Aotea / Great Barrier）等外海岛屿不在 LINZ 郊区图层内，故未绘制。</li>
     </ul>
-    <p style="margin:14px 0 0; color:var(--muted)">数据来源：LINZ（CC BY 4.0）· Auckland Council 公开估价图层 · Opes Partners · English Wikipedia（CC BY-SA 4.0）。页面为静态生成，无追踪、无 cookie、无后端。</p>
+    <p style="margin:14px 0 0; color:var(--muted)">数据来源：LINZ（CC BY 4.0）· Auckland Council 公开估价图层 · Opes Partners · English Wikipedia（CC BY-SA 4.0）。页面为静态生成，无追踪、无 cookie；AI 请求只经过受限模型代理。</p>
   ` : `
     <h2>Disclaimer</h2>
     <p style="margin:0 0 16px">A personal research project. <b>Not investment or property advice.</b>
       Every figure here is an <b>estimate</b> — an automated valuation model, or the council's
       rating valuation (CV) — <b>not a sale price</b>, and an individual property can sit a long way
-      from it. The suburb finder has a language model read your request and pick suburbs from public
-      data, and every figure it writes is checked against that suburb's own row before you see it.
+      from it. The suburb finder uses a LangChain agent with read-only tools over this project's
+      data; tool citations, suburb names and significant figures are verified before you see them.
       It still knows nothing about your finances and has never seen the houses. Talk to a licensed agent, a registered valuer or a
       financial adviser before deciding anything.</p>
     <h2>About the data</h2>
@@ -3063,7 +3075,7 @@ function notesHtml() {
     </ul>
     <p style="margin:14px 0 0; color:var(--muted)">Sources: LINZ (CC BY 4.0) · Auckland Council public valuation
       layer · Opes Partners · English Wikipedia (CC BY-SA 4.0). Statically generated — no tracking, no cookies,
-      no backend.</p>
+      with AI requests sent only through a constrained model proxy.</p>
   `;
 }
 
