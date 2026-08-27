@@ -1,0 +1,7 @@
+interface:
+  display_name: "发布奥克兰选房项目"
+  short_description: "复用现有实现并把每次功能改动验证、推送、发布到线上"
+  default_prompt: "使用 $ship 完成功能修改，并同步远程 main、重新发布和验证线上结果。"
+
+policy:
+  allow_implicit_invocation: true
