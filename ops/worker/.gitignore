@@ -2,3 +2,8 @@ node_modules/
 .wrangler/
 .dev.vars
 .env
+.venv/
+.venv-workers/
+.wheels_temp/
+python_modules/
+__pycache__/

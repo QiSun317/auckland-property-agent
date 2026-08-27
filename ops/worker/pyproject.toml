@@ -1,0 +1,16 @@
+[project]
+name = "auckland-suburb-agent"
+version = "2.0.0"
+description = "Grounded LangChain Python assistant for Auckland project data"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain-core>=0.3.81,<1.0.0",
+    "webtypy>=0.1.7",
+]
+
+[dependency-groups]
+dev = [
+    "workers-py>=1.16.4,<2",
+    "workers-runtime-sdk",
+]

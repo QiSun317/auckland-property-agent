@@ -1,27 +1,16 @@
 {
   "name": "auckland-suburb-agent",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "check": "npm run typecheck && npm test && npm run deploy:dry",
-    "deploy": "wrangler deploy",
-    "deploy:dry": "wrangler deploy --dry-run --outdir .wrangler/dry-run",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "types": "wrangler types src/worker-configuration.d.ts"
-  },
-  "dependencies": {
-    "@langchain/core": "1.2.9",
-    "@langchain/google": "0.2.3",
-    "langchain": "1.5.10",
-    "zod": "4.4.3"
+    "check": "npm run test && npm run deploy:dry",
+    "deploy": "npm run sync && wrangler deploy",
+    "deploy:dry": "npm run sync && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "dev": "npm run sync && wrangler dev",
+    "sync": "uv run pywrangler sync && ./scripts/setup_pyodide_deps.sh",
+    "test": "PYTHONPATH=src:tests uv run python -m unittest discover -s tests -p 'test_*.py'"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.1.0",
-    "@types/node": "26.4.0",
-    "typescript": "7.0.2",
-    "vitest": "4.1.11",
     "wrangler": "4.126.0"
   }
 }
