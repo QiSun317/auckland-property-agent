@@ -42,3 +42,5 @@
 {"id": "figures-exact-still-passes", "kind": "figures", "suburb": "Takanini", "template": "入门价为 $%s，租金回报率为 4.2%", "field": "entry_price", "expect": true, "why": "tightening the tolerance must not reject a figure copied correctly"}
 {"id": "model-answer-escapes-html", "kind": "modelhtml", "input": "<img src=x onerror=alert(1)>", "expect": "&lt;img src=x onerror=alert(1)&gt;", "why": "free-form Agent text must never become executable page markup"}
 {"id": "model-answer-preserves-lines", "kind": "modelhtml", "input": "第一行\n第二行", "expect": "第一行<br>第二行", "why": "escaped free-form answers still need readable paragraphs"}
+{"id": "answer-language-en", "kind": "language", "input": "Which has the lower entry value, Papakura or Manurewa?", "expect": "en", "why": "assistant cards must follow the current English question even while the page and earlier conversation are Chinese"}
+{"id": "answer-language-zh", "kind": "language", "input": "Papakura 和 Manurewa 哪个入门值更低？", "expect": "zh", "why": "a mixed suburb-name question containing Chinese should render the assistant turn in Chinese"}

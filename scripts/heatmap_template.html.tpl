@@ -625,12 +625,22 @@ function detectLang() {
   return 'en';
 }
 let LANG = detectLang();
-const L = (zh, en) => (LANG === 'zh' ? zh : en);
+// Assistant copy follows the language of this turn's question, even when the
+// surrounding page (or earlier conversation) is in the other language.
+// The override is active only while one synchronous answer is rendered; it is
+// suspended during the network wait so unrelated page interactions keep using
+// the UI language.
+let ANSWER_LANG = null;
+const activeLang = () => ANSWER_LANG || LANG;
+function questionLanguage(text) {
+  return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(text) ? 'zh' : 'en';
+}
+const L = (zh, en) => (activeLang() === 'zh' ? zh : en);
 const ZONE_L = {
   '北岸': 'North Shore', '西区': 'West', '中区': 'Central', '东区': 'East',
   '南区': 'South', '北部乡村': 'Rodney / rural north', '海岛': 'Gulf islands',
 };
-const zoneL = z => (LANG === 'zh' ? z : (ZONE_L[z] || z || ''));
+const zoneL = z => (activeLang() === 'zh' ? z : (ZONE_L[z] || z || ''));
 
 function applyLang() {
   document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
@@ -1998,7 +2008,7 @@ const MISSING_LABEL = {
   school: ['学区 / 学校', 'school zones'], crime: ['治安', 'crime'],
   ethnicity: ['族裔构成', 'ethnic makeup'], hazard: ['洪水 / 地质风险', 'flood and landslide risk'],
 };
-const missingLabels = keys => keys.map(k => MISSING_LABEL[k][LANG === 'zh' ? 0 : 1])
+const missingLabels = keys => keys.map(k => MISSING_LABEL[k][activeLang() === 'zh' ? 0 : 1])
   .join(L('、', ', ')) + L('的数据目前不在这个数据集里', ' is not in this dataset');
 
 /* ---------- scoring ---------- */
@@ -2353,7 +2363,7 @@ function describeCriteria(c) {
   if (c.suburbs.length) bits.push(c.suburbs.join(' / '));
   if (c.maxKm) bits.push(L(`离市中心 ≤ ${c.maxKm} km`, `within ${c.maxKm} km of the city`));
   if (c.minKm) bits.push(L(`离市中心 > ${c.minKm} km`, `beyond ${c.minKm} km from the city`));
-  const labels = LANG === 'zh'
+  const labels = activeLang() === 'zh'
     ? { invest: '投资收租', quiet: '安静', land: '大地块', apartment: '公寓',
         commute: '通勤方便', coastal: '近海', growth: '看重升值', liquid: '好脱手',
         cheap: '越便宜越好' }
@@ -2426,7 +2436,7 @@ function traitChips(s) {
 function noteFor(key) {
   const n = (DATA.notes || {})[key];
   if (!n) return '';
-  return (LANG === 'zh' ? n[0] : n[1])
+  return (activeLang() === 'zh' ? n[0] : n[1])
     .replace(/\*\*/g, '').replace(/"/g, '&quot;');
 }
 
@@ -2592,9 +2602,15 @@ function explainAnswer(text) {
 async function handle(text) {
   if (AI.busy) return;
   AI.busy = true;
+  const replyLanguage = questionLanguage(text);
+  ANSWER_LANG = replyLanguage;
   $('#aiSend').disabled = true;
   say(text.replace(/</g, '&lt;'), 'msg-user');
-  const done = () => { AI.busy = false; $('#aiSend').disabled = false; };
+  const done = () => {
+    ANSWER_LANG = null;
+    AI.busy = false;
+    $('#aiSend').disabled = false;
+  };
 
   if (RESTART.test(text)) {
     AI.last = null;
@@ -2646,13 +2662,15 @@ async function handle(text) {
 
   let picks = null, lead = null, modelAnswer = '', modelWhy = new Map(), dropped = 0;
   if (MODEL_ON) {
+    ANSWER_LANG = null;
     const out = await askModel(text, c, AI.last, AI.history).catch(() => null);
+    ANSWER_LANG = replyLanguage;
     // Advisory only. The model tends to read "I have no school data" as "not my
     // subject"; a stated budget or area says otherwise, and the local signal is
     // the more reliable judge of whether this is a property question at all.
     if (out && out.on_topic === false && topicSignals(text, c) < 2 && !isFollowUp(text)) {
       refuse();
-      AI.busy = false; $('#aiSend').disabled = false; return;
+      return done();
     }
     if (out && out.criteria) Object.assign(c, {
         budget: c.budget ?? out.criteria.budget ?? null,
@@ -2724,7 +2742,7 @@ async function handle(text) {
           '给个预算或大致区域，我就能开始。',
           'What I can filter on: <b>price, bedroom mix, section size, distance to the city, ' +
           'rental yield and how actively a suburb trades</b>. Give me a budget or an area and I can start.'));
-    AI.busy = false; $('#aiSend').disabled = false; return;
+    return done();
   }
 
   // A named suburb is a question about that suburb, not a request to have it
@@ -2760,7 +2778,7 @@ async function handle(text) {
     if (!scored.length) {
       say(L('按这些条件<b>没有</b>匹配的郊区。', '<b>No</b> suburb matches all of that.') + diagnose(c));
       remember([]);
-      AI.busy = false; $('#aiSend').disabled = false; return;
+      return done();
     }
     if (c.wants.includes('cheap') && !c.budget) {
       picks = [...scored].sort((x, y) => x.s.dt.q[1] - y.s.dt.q[1]).slice(0, 3);
@@ -2805,8 +2823,7 @@ async function handle(text) {
         'Hover any of them to outline it on the Auckland map; click the button to open that suburb’s heat map.'));
 
   remember(picks.map(r => r.s.n), modelAnswer);
-  AI.busy = false;
-  $('#aiSend').disabled = false;
+  return done();
 }
 
 /* ---------- model layer ----------

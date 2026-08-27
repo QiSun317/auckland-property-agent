@@ -26,7 +26,8 @@ const w = dom.window;
 await new Promise((r) => setTimeout(r, 800));
 
 for (const fn of ["parseRequest", "readIntent", "figuresCheckOut",
-                  "claimsCheckOut", "factsFor", "offTopic", "carryOver", "modelHtml"]) {
+                  "claimsCheckOut", "factsFor", "offTopic", "carryOver", "modelHtml",
+                  "questionLanguage"]) {
   if (typeof w[fn] !== "function") {
     console.error(`${fn} is not on the page — the harness is testing nothing`);
     process.exit(2);
@@ -61,6 +62,9 @@ for (const c of cases) {
       ok = got === c.expect;
     } else if (c.kind === "modelhtml") {
       got = w.modelHtml(c.input);
+      ok = got === c.expect;
+    } else if (c.kind === "language") {
+      got = w.questionLanguage(c.input);
       ok = got === c.expect;
     } else if (c.kind === "refuse") {
       got = w.offTopic(c.input, w.parseRequest(c.input));
