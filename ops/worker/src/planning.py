@@ -89,6 +89,21 @@ ZONE_ABBREVIATIONS = {
     "thab": 8,
 }
 
+# Common reader-facing Chinese names. These are literal aliases for an exact
+# planning-zone name; they never map a suburb or address to a zone.
+ZONE_TEXT_ALIASES = {
+    "混合住宅城市区": 60,
+    "住宅混合城市区": 60,
+    "混合住房城市区": 60,
+    "混合住宅郊区": 18,
+    "住宅混合郊区": 18,
+    "独立住宅区": 19,
+    "单户住宅区": 19,
+    "排屋及公寓楼区": 8,
+    "排屋和公寓楼区": 8,
+    "联排住宅和公寓楼区": 8,
+}
+
 
 @dataclass(frozen=True)
 class PlanScope:
@@ -157,6 +172,11 @@ def explicit_plan_scope(text: str) -> PlanScope | None:
 
     for abbreviation, code in ZONE_ABBREVIATIONS.items():
         if re.search(rf"\b{abbreviation}\b", text, re.IGNORECASE):
+            name, chapters = PLAN_ZONES[code]
+            candidates[chapters] = PlanScope(code, name, chapters)
+
+    for alias, code in ZONE_TEXT_ALIASES.items():
+        if _normalise(alias) in normalised:
             name, chapters = PLAN_ZONES[code]
             candidates[chapters] = PlanScope(code, name, chapters)
 

@@ -2211,7 +2211,7 @@ const TOPIC_WORDS = [
   'deposit', 'yield', 'invest', 'live', 'living', 'move', 'area', 'neighbourhood',
   'neighborhood', 'commute', 'school', 'section', 'land', 'bedroom', 'auckland',
 ];
-const PLAN_TOPIC = /unitary\s+plan|planning\s+zone|mixed\s+housing|single\s+house\s+zone|terrace\s+housing|building\s+height|height\s+limit|recession\s+plane|subdivi(?:de|sion)|yard\s+(?:rule|requirement)|impervious|规划|分区|建筑高度|限高|退界|细分|不透水|覆盖率/i;
+const PLAN_TOPIC = /unitary\s+plan|planning\s+zone|mixed\s+housing|single\s+house\s+zone|terrace\s+housing|building\s+height|height\s+limit|recession\s+plane|subdivi(?:de|sion)|yard\s+(?:rule|requirement)|impervious|规划|分区|建筑高度|能建多高|限高|退界|细分|不透水|覆盖率|混合住宅(?:城市|郊区)区?|住宅混合(?:城市|郊区)区|独立住宅区|单户住宅区|排屋.{0,3}公寓楼区/i;
 const OFFTOPIC_SHAPES = [
   /写(一?[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
   /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume)\b/i,

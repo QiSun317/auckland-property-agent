@@ -16,9 +16,13 @@ from dataset import clean_dataset
 
 
 class FakePlanningRetriever:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[str, ...], int]] = []
+
     async def search(
         self, question: str, chapters: tuple[str, ...], limit: int
     ) -> list[dict[str, Any]]:
+        self.calls.append((question, chapters, limit))
         return [
             {
                 "id": "H5.6.4#1",
@@ -57,19 +61,9 @@ class ScriptedModel:
 
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_explicit_plan_zone_uses_grounded_langchain_tool(self) -> None:
+        retriever = FakePlanningRetriever()
         model = ScriptedModel(
             [
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "search_unitary_plan",
-                            "args": {"question": "建筑高度", "limit": 5},
-                            "id": "plan-1",
-                            "type": "tool_call",
-                        }
-                    ],
-                ),
                 AIMessage(
                     content="",
                     tool_calls=[
@@ -101,11 +95,21 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             clean_dataset({"fields": FIELDS, "rows": ROWS}),
             "Mixed Housing Urban 区能建多高？",
             "Chinese",
-            FakePlanningRetriever(),
+            retriever,
             current_question="Mixed Housing Urban 区能建多高？",
         )
 
         self.assertIn("search_unitary_plan", model.bound_names)
+        self.assertEqual(
+            retriever.calls,
+            [
+                (
+                    "Mixed Housing Urban 区能建多高？",
+                    ("E36", "E38", "H5"),
+                    5,
+                )
+            ],
+        )
         self.assertEqual(result["picks"], [])
         self.assertIn("H5.6.4", result["answer"])
         self.assertEqual(len(result["evidence"]), 2)

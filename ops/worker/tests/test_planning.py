@@ -68,6 +68,12 @@ class PlanScopeTests(unittest.TestCase):
         self.assertEqual(by_code.code, 60)
         self.assertEqual(by_chapter.chapters, ("E36", "E39", "H19"))
 
+    def test_resolves_literal_chinese_zone_alias(self) -> None:
+        scope = explicit_plan_scope("住宅混合城市区能建多高？")
+        self.assertIsNotNone(scope)
+        self.assertEqual(scope.code, 60)
+        self.assertEqual(scope.chapters, ("E36", "E38", "H5"))
+
     def test_does_not_infer_zone_from_suburb(self) -> None:
         self.assertIsNone(explicit_plan_scope("How tall can I build in Remuera?"))
 

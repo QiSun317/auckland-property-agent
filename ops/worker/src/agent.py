@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from dataset import Dataset, dataset_definition_facts
 from gemini import GeminiWorkerChatModel
 from grounding import AGENT_RESPONSE_SCHEMA, ground_agent_response
-from planning import PlanningRetriever
+from planning import PlanningRetriever, explicit_plan_scope
 from tools import collect_tool_facts, create_dataset_tools
 
 SYSTEM_PROMPT = """You are the Auckland Property Intelligence project's data assistant.
@@ -126,6 +126,44 @@ async def _run_tool_agent(
     tools_by_name = {tool.name: tool for tool in dataset_tools}
     runnable = model.bind_tools([*dataset_tools, FINAL_RESPONSE_TOOL])
     messages: list[Any] = [SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)]
+
+    # Exact planning scope is a security boundary, not a model judgement. When
+    # the current question states one literally, execute the filtered LangChain
+    # tool first so the model cannot waste a turn describing scope or choose a
+    # broader search. The normal Agent loop still writes and submits the answer.
+    plan_scope = None
+    if planning_retriever is not None and current_question:
+        try:
+            plan_scope = explicit_plan_scope(current_question)
+        except ValueError:
+            # Multiple exact scopes need a reader clarification; leave that to
+            # the ordinary Agent loop rather than silently choosing one.
+            pass
+    if plan_scope is not None:
+        plan_call = {
+            "name": "search_unitary_plan",
+            "args": {"question": current_question, "limit": 5},
+            "id": "server-routed-plan-search",
+            "type": "tool_call",
+        }
+        plan_tool = tools_by_name["search_unitary_plan"]
+        plan_content = await plan_tool.ainvoke(plan_call["args"])
+        if not isinstance(plan_content, str):
+            plan_content = json.dumps(
+                plan_content,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        messages.extend(
+            [
+                AIMessage(content="", tool_calls=[plan_call]),
+                ToolMessage(
+                    name="search_unitary_plan",
+                    tool_call_id=plan_call["id"],
+                    content=plan_content,
+                ),
+            ]
+        )
 
     for _ in range(model.max_model_calls):
         response = await runnable.ainvoke(messages)
