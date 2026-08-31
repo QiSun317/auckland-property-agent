@@ -35,6 +35,9 @@ BUILD = ROOT / "build"
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_embeddings  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "ops" / "worker" / "src"))
+from planning import PLAN_ZONES  # noqa: E402
+
 VECTORIZE_METADATA_LIMIT = 10 * 1024
 # Leave room for implementation-level JSON accounting differences at the API.
 METADATA_TARGET = 9_500
@@ -117,6 +120,16 @@ def export(model: str, output: Path, zones_output: Path, manifest: Path) -> None
     ).fetchall()
     zones = zone_map(con)
     con.close()
+
+    exported_scope = {
+        int(code): (item["name"], tuple(item["chapters"]))
+        for code, item in zones.items()
+    }
+    if exported_scope != PLAN_ZONES:
+        sys.exit(
+            "Worker PLAN_ZONES has drifted from the project database; update the "
+            "routing map before uploading vectors"
+        )
 
     if len(rows) != expected:
         sys.exit(f"embedding run says {expected} clauses, joined export has {len(rows)}")

@@ -15,6 +15,28 @@ from agent import (
 from dataset import clean_dataset
 
 
+class FakePlanningRetriever:
+    async def search(
+        self, question: str, chapters: tuple[str, ...], limit: int
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "H5.6.4#1",
+                "clause_key": "H5.6.4#1",
+                "chapter": "H5",
+                "clause_id": "H5.6.4",
+                "title": "Building height",
+                "page_from": 42,
+                "page_to": 42,
+                "plan_changes": "",
+                "status": "ok",
+                "source_url": "https://example.test/H5.pdf",
+                "text": "Buildings must not exceed 11m in height.",
+                "score": 0.91,
+            }
+        ]
+
+
 class ScriptedModel:
     max_model_calls = 5
 
@@ -34,6 +56,60 @@ class ScriptedModel:
 
 
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_plan_zone_uses_grounded_langchain_tool(self) -> None:
+        model = ScriptedModel(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_unitary_plan",
+                            "args": {"question": "建筑高度", "limit": 5},
+                            "id": "plan-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "submit_grounded_response",
+                            "args": {
+                                "on_topic": True,
+                                "answer": (
+                                    "项目保存的 H5.6.4 条款写明建筑高度不得超过 11m。"
+                                    "这只是项目数据摘要，不是法律或许可意见。"
+                                ),
+                                "picks": [],
+                                "citations": [
+                                    "plan:H5.6.4#1:text",
+                                    "plan:H5.6.4#1:source_url",
+                                ],
+                                "limitations": ["具体地块仍需核对叠加层及许可要求"],
+                            },
+                            "id": "final-plan",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            ]
+        )
+
+        result = await _run_tool_agent(
+            model,
+            clean_dataset({"fields": FIELDS, "rows": ROWS}),
+            "Mixed Housing Urban 区能建多高？",
+            "Chinese",
+            FakePlanningRetriever(),
+            current_question="Mixed Housing Urban 区能建多高？",
+        )
+
+        self.assertIn("search_unitary_plan", model.bound_names)
+        self.assertEqual(result["picks"], [])
+        self.assertIn("H5.6.4", result["answer"])
+        self.assertEqual(len(result["evidence"]), 2)
+
     async def test_tool_result_is_grounded_before_return(self) -> None:
         model = ScriptedModel(
             [

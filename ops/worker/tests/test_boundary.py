@@ -34,6 +34,11 @@ class BoundaryTests(unittest.TestCase):
     def test_obvious_off_topic_is_declined(self) -> None:
         self.assertTrue(is_obviously_off_topic("请写一首诗"))
         self.assertFalse(is_obviously_off_topic("比较奥克兰房价"))
+        self.assertFalse(
+            is_obviously_off_topic(
+                "What is the building height limit in the Mixed Housing Urban Zone?"
+            )
+        )
 
     def test_errors_redact_api_keys(self) -> None:
         key = "AIza0123456789abcdefghijkl"

@@ -2211,6 +2211,7 @@ const TOPIC_WORDS = [
   'deposit', 'yield', 'invest', 'live', 'living', 'move', 'area', 'neighbourhood',
   'neighborhood', 'commute', 'school', 'section', 'land', 'bedroom', 'auckland',
 ];
+const PLAN_TOPIC = /unitary\s+plan|planning\s+zone|mixed\s+housing|single\s+house\s+zone|terrace\s+housing|building\s+height|height\s+limit|recession\s+plane|subdivi(?:de|sion)|yard\s+(?:rule|requirement)|impervious|规划|分区|建筑高度|限高|退界|细分|不透水|覆盖率/i;
 const OFFTOPIC_SHAPES = [
   /写(一?[首篇段]|个|下)|翻译|代码|程序|作文|故事|笑话|食谱|菜谱|歌词|论文|简历/,
   /\b(write|translate|code|program|debug|script|poem|story|joke|recipe|essay|resume)\b/i,
@@ -2230,6 +2231,10 @@ function topicSignals(text, c) {
   // Asking about schools, crime or flood risk IS a property question — it is one
   // this dataset cannot answer, which is a different thing from off topic.
   n += c.missing.length * 2;
+  // Planning questions are now first-class project questions. Count the whole
+  // phrase as a strong signal so "What is the building height limit..." is not
+  // rejected by the generic "what is" guard before it reaches the Agent.
+  if (PLAN_TOPIC.test(text)) n += 2;
   for (const w of TOPIC_WORDS) if (t.includes(w)) { n++; break; }
   return n;
 }
@@ -2697,6 +2702,11 @@ async function handle(text) {
       }
       if (!picks.length) picks = null;
       if (dropped) modelAnswer = '';
+    } else if (!out && PLAN_TOPIC.test(text)) {
+      say(`<span class="warn">${L(
+        '规划条款检索暂时不可用，请稍后再试；我不会用郊区推荐代替规划答案。',
+        'Unitary Plan retrieval is temporarily unavailable. Please try again shortly; I will not substitute a suburb shortlist for a planning answer.')}</span>`);
+      return done();
     } else if (!out) {
       say(`<span class="muted-note">${L('（AI 暂时不可用，已用本地规则推荐）',
                                         '(AI unavailable right now — using local rules)')}</span>`);
@@ -2980,8 +2990,8 @@ async function askModel(text, c, last, history) {
 
 /* ---------- panel wiring ---------- */
 $('#aiFoot').innerHTML = MODEL_ON
-  ? L(`LangChain AI 只通过只读工具查询本项目 ${priced.length} 个区的数据；引用、区名和数字都经过服务端与本页复核，失败时自动回退本地规则。`,
-      `The LangChain AI can only query this project\u2019s ${priced.length} suburbs through read-only tools; citations, names and figures are verified, with local rules as fallback.`)
+  ? L(`LangChain AI 只通过只读工具查询本项目 ${priced.length} 个区的数据和统一规划条款；引用、区名和数字都经过服务端与本页复核。`,
+      `The LangChain AI can only query this project\u2019s ${priced.length} suburbs and Unitary Plan clauses through read-only tools; citations, names and figures are verified.`)
   : L('全部由本页数据按规则算出。', 'Computed from this page\u2019s data by rule.');
 function openPanel() { $('#aiPanel').hidden = false; $('#aiToggle').hidden = true; $('#aiInput').focus(); }
 function closePanel() { $('#aiPanel').hidden = true; $('#aiToggle').hidden = false; }
@@ -3005,9 +3015,11 @@ function resetAssistant() {
   AI.last = null;
   AI.history = [];
   say(L('可以直接问我任何<b>本项目数据能回答</b>的奥克兰住宅问题，也可以告诉我预算和区域，让我筛选郊区并说清取舍。<br>' +
+        '查统一规划条款时，请给出精确的规划区名称、代码或 H/E 章节；我不会从 suburb 猜单个地块的分区。<br>' +
         '也可以慢慢说：先讲个大概，再用「<b>贵一点的</b>」「<b>再远一点</b>」接着调，我记着上一轮的条件；想清空就说「重新开始」。<br>' +
         '价格口径：平均估值与议会 CV，都不是成交价。',
         'Ask anything this project\u2019s <b>Auckland housing data can support</b>, or give me a budget and area for a suburb shortlist with explicit trade-offs.<br>' +
+        'For Unitary Plan clauses, state the exact planning-zone name/code or H/E chapter; I will not infer a property\u2019s zone from its suburb.<br>' +
         'You can also take it a step at a time: start rough, then say <b>"anything dearer"</b> or <b>"further out"</b> and I carry your criteria forward. Say "start over" to clear them.<br>' +
         'All figures are estimates — automated valuations and council CVs, not sale prices.'));
 }
@@ -3020,7 +3032,8 @@ function notesHtml() {
     <h2>免责声明</h2>
     <p style="margin:0 0 16px">个人研究项目，<b>不构成投资或购房建议</b>。页面上所有价格都是<b>估值</b>
       —— 自动估值模型与议会政府估价（CV）—— <b>不是成交价</b>，个体房产可能与之相差很大。
-      选房助手由 LangChain AI 通过只读工具查询本项目数据；工具引用、地区名称与显著数字都会复核；
+      选房助手由 LangChain AI 通过只读工具查询本项目数据与统一规划条款；工具引用、地区名称与显著数字都会复核；
+      规划回答只是项目数据摘要，不是法律或许可意见；
       但它不了解你的财务状况，也没有任何实地信息。
       做决定前请咨询持牌中介、注册估价师或财务顾问。</p>
     <h2>关于数据</h2>

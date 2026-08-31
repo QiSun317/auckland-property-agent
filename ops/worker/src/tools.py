@@ -24,6 +24,13 @@ from dataset import (
     find_suburb,
     query_rows,
 )
+from planning import (
+    PlanningRetriever,
+    explicit_plan_scope,
+    facts_for_plan_hits,
+    planning_scope_facts,
+    planning_zones_for_tool,
+)
 
 NumericField = Literal[
     "entry_price",
@@ -108,6 +115,11 @@ class CalculationInput(StrictModel):
         return self
 
 
+class PlanSearchInput(StrictModel):
+    question: str = Field(min_length=2, max_length=800)
+    limit: int = Field(default=5, ge=1, le=8)
+
+
 def _jsonable(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(exclude_none=True)
@@ -171,7 +183,12 @@ class ToolSession:
         )
 
 
-def create_dataset_tools(dataset: Dataset) -> tuple[list[StructuredTool], ToolSession]:
+def create_dataset_tools(
+    dataset: Dataset,
+    planning_retriever: PlanningRetriever | None = None,
+    *,
+    current_question: str = "",
+) -> tuple[list[StructuredTool], ToolSession]:
     session = ToolSession(dataset)
 
     async def lookup_suburbs(names: list[str]) -> str:
@@ -272,6 +289,55 @@ def create_dataset_tools(dataset: Dataset) -> tuple[list[StructuredTool], ToolSe
             {label: rounded},
         )
 
+    async def describe_unitary_plan_scope() -> str:
+        session.begin("describe_unitary_plan_scope", {})
+        facts = planning_scope_facts()
+        return session.result(
+            {
+                "source": facts["constant:plan:source"],
+                "exact_zone_required": facts[
+                    "constant:plan:exact_zone_required"
+                ],
+                "planning_zones": planning_zones_for_tool(),
+            },
+            facts,
+        )
+
+    async def search_unitary_plan(question: str, limit: int = 5) -> str:
+        if planning_retriever is None:
+            raise RuntimeError("Unitary Plan retrieval is unavailable")
+        scope = explicit_plan_scope(current_question)
+        if scope is None:
+            raise ValueError(
+                "The current user question does not state an exact planning zone "
+                "name, zone code, or chapter. Do not infer one from a suburb; call "
+                "describe_unitary_plan_scope and ask the user for the exact zone."
+            )
+        payload = {"question": question, "limit": limit, "scope": scope.as_dict()}
+        session.begin("search_unitary_plan", payload)
+        hits = await planning_retriever.search(question, scope.chapters, limit)
+        facts = facts_for_plan_hits(hits)
+        facts[f"constant:plan:scope:{scope.name}"] = ", ".join(scope.chapters)
+        return session.result(
+            {
+                "scope": scope.as_dict(),
+                "hits": [
+                    {
+                        "clause_key": hit.get("clause_key") or hit.get("id"),
+                        "chapter": hit.get("chapter"),
+                        "clause_id": hit.get("clause_id"),
+                        "title": hit.get("title"),
+                        "score": hit.get("score"),
+                        "fact_prefix": (
+                            f"plan:{hit.get('clause_key') or hit.get('id')}"
+                        ),
+                    }
+                    for hit in hits
+                ],
+            },
+            facts,
+        )
+
     tools = [
         StructuredTool.from_function(
             coroutine=lookup_suburbs,
@@ -304,6 +370,30 @@ def create_dataset_tools(dataset: Dataset) -> tuple[list[StructuredTool], ToolSe
             args_schema=CalculationInput,
         ),
     ]
+    if planning_retriever is not None:
+        tools.extend(
+            [
+                StructuredTool.from_function(
+                    coroutine=describe_unitary_plan_scope,
+                    name="describe_unitary_plan_scope",
+                    description=(
+                        "解释项目中的 Auckland Unitary Plan 资料、可接受的精确规划区名称/代码/章节，"
+                        "以及为什么不能从 suburb 推断单个房产的规划区。当前问题没有明确规划区时调用。"
+                    ),
+                    args_schema=DescribeInput,
+                ),
+                StructuredTool.from_function(
+                    coroutine=search_unitary_plan,
+                    name="search_unitary_plan",
+                    description=(
+                        "只在当前用户问题逐字给出精确 Unitary Plan 规划区名称、zone code 或 H/E 章节时，"
+                        "在该范围内检索项目保存的规划条款。服务端会从当前问题独立验证范围；"
+                        "绝不能根据 suburb、历史或模型常识猜规划区。"
+                    ),
+                    args_schema=PlanSearchInput,
+                ),
+            ]
+        )
     return tools, session
 
 

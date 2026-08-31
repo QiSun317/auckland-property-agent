@@ -40,6 +40,8 @@ from pathlib import Path
 
 import duckdb
 
+import build_embeddings
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get("AKL_DATA_DIR", ROOT / "data"))
 DB = Path(os.environ.get("AKL_DB", DATA / "auckland.duckdb"))
@@ -49,18 +51,12 @@ _model_cache = {}
 
 def embedding_config(con, model=None):
     """The row embedding_run recorded, so the query prefix matches the vectors."""
-    if model:
-        row = con.execute("SELECT * FROM embedding_run WHERE model = ?",
-                          [model]).fetchone()
-        if not row:
-            sys.exit(f"no vectors for '{model}' — "
-                     f"run scripts/build_embeddings.py --model {model}")
-    else:
-        row = con.execute(
-            "SELECT * FROM embedding_run ORDER BY clauses DESC, built_at DESC LIMIT 1"
-        ).fetchone()
-        if not row:
-            sys.exit("no embeddings yet — run scripts/build_embeddings.py")
+    model = model or build_embeddings.DEFAULT
+    row = con.execute("SELECT * FROM embedding_run WHERE model = ?",
+                      [model]).fetchone()
+    if not row:
+        sys.exit(f"no vectors for '{model}' — "
+                 f"run scripts/build_embeddings.py --model {model}")
     return {"model": row[0], "hf_id": row[1], "dims": row[2],
             "query_prefix": row[3], "passage_prefix": row[4]}
 

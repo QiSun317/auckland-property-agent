@@ -22,6 +22,7 @@ from boundary import (
     safe_error,
 )
 from dataset import clean_dataset
+from planning import CloudflarePlanningRetriever
 
 
 def _to_js_object(value: dict[str, Any]) -> Any:
@@ -131,6 +132,10 @@ class Default(WorkerEntrypoint):
                 text=text,
                 context=context,
                 history=clean_history(body.get("history")),
+                planning_retriever=CloudflarePlanningRetriever(
+                    self.env.AI,
+                    self.env.PLAN_INDEX,
+                ),
             )
             print(
                 json.dumps(

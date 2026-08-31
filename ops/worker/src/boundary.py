@@ -55,6 +55,18 @@ PROPERTY_WORDS = (
     "price",
     "dataset",
     "compare",
+    "unitary plan",
+    "planning zone",
+    "building height",
+    "height limit",
+    "recession plane",
+    "subdivision",
+    "规划",
+    "分区",
+    "建筑高度",
+    "限高",
+    "退界",
+    "细分",
 )
 EXPLICIT_OFF_TOPIC = (
     re.compile(
