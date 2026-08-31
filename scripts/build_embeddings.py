@@ -43,7 +43,11 @@ MODELS = {
     "e5-small": ("intfloat/multilingual-e5-small", 384, "query: ", "passage: "),
     "bge-m3": ("BAAI/bge-m3", 1024, "", ""),
 }
-DEFAULT = "e5-base"
+# BGE-M3 wins on this project's bilingual, zone-filtered eval set: 97%
+# recall@5 / 0.82 MRR versus e5-base's 90% / 0.72, with zero off-zone hits
+# for both filtered paths. Keep the decision beside the model registry so the
+# pipeline, CLI and future exports all select the same tested encoder.
+DEFAULT = "bge-m3"
 
 
 def table_for(model):

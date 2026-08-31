@@ -279,8 +279,9 @@ SOURCES = [
 # build_db.py writes a fresh database and swaps it in, so anything that adds
 # tables to it has to run afterwards or be thrown away with the old file. That
 # is why the plan clauses and their vectors are rebuilt here every time rather
-# than carried forward: extraction takes five seconds and embedding twenty-two,
-# which is cheaper than the machinery for keeping a stale copy honest.
+# than carried forward: extraction takes five seconds and BGE-M3 embedding
+# takes about four minutes on the reference laptop, which is still cheaper
+# than the machinery for keeping a stale copy honest.
 BUILD_STEPS = ["build_db.py", "build_plan.py", "build_embeddings.py",
                "build_detail.py", "build_map.py"]
 
