@@ -126,6 +126,7 @@ async def _run_tool_agent(
     tools_by_name = {tool.name: tool for tool in dataset_tools}
     runnable = model.bind_tools([*dataset_tools, FINAL_RESPONSE_TOOL])
     messages: list[Any] = [SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)]
+    server_routed_facts: dict[str, str | int | float | None] = {}
 
     # Exact planning scope is a security boundary, not a model judgement. When
     # the current question states one literally, execute the filtered LangChain
@@ -154,15 +155,23 @@ async def _run_tool_agent(
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-        messages.extend(
-            [
-                AIMessage(content="", tool_calls=[plan_call]),
-                ToolMessage(
-                    name="search_unitary_plan",
-                    tool_call_id=plan_call["id"],
-                    content=plan_content,
-                ),
-            ]
+        parsed_plan_content = json.loads(plan_content)
+        raw_plan_facts = parsed_plan_content.get("facts", {})
+        server_routed_facts.update(
+            {
+                str(label): value
+                for label, value in raw_plan_facts.items()
+                if isinstance(value, (str, int, float)) or value is None
+            }
+        )
+        messages.append(
+            SystemMessage(
+                "The server has already executed search_unitary_plan with the "
+                "exact scope verified from the current question. Treat this as "
+                "trusted project tool output. Do not call another planning tool; "
+                "use these facts and immediately call submit_grounded_response:\n"
+                f"{plan_content}"
+            )
         )
 
     for _ in range(model.max_model_calls):
@@ -211,6 +220,7 @@ async def _run_tool_agent(
                         )
                     facts = {
                         **dataset_definition_facts(dataset),
+                        **server_routed_facts,
                         **collect_tool_facts(messages),
                     }
                     grounded = ground_agent_response(arguments, dataset, facts)
