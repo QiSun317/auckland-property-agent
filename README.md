@@ -17,6 +17,7 @@ python3 scripts/build_map.py         # 生成 heatmap.html + suburb_prices.csv
 python3 scripts/build_db.py          # 装进 DuckDB（约 30 秒）
 python3 scripts/build_plan.py        # 章节 PDF → 可引用的条款块（5 秒）
 python3 scripts/build_embeddings.py  # BGE-M3 条款向量（约 4 分钟；缺 torch 会跳过而非报错）
+python3 scripts/export_plan_vectorize.py  # 生成 Vectorize NDJSON 与分区→章节映射
 python3 scripts/export_state.py      # 导出 CI 需要的 24 KB 状态
 python3 scripts/rate_history.py      # 把今天的利率折进 SCD2 历史
 ```
