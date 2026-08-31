@@ -104,6 +104,15 @@ ZONE_TEXT_ALIASES = {
     "联排住宅和公寓楼区": 8,
 }
 
+_PLANNING_QUESTION = re.compile(
+    r"unitary\s+plan|planning\s+zone|building\s+height|height\s+limit|"
+    r"how\s+(?:tall|high)\b.{0,40}\bbuild|recession\s+plane|"
+    r"subdivi(?:de|sion)|yard\s+(?:rule|requirement)|impervious|"
+    r"\b(?:H(?:[1-9]|1\d|2[01])|E(?:36|38|39))\b|"
+    r"规划|分区|建筑高度|能建多高|限高|退界|细分|不透水|覆盖率",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class PlanScope:
@@ -188,6 +197,17 @@ def explicit_plan_scope(text: str) -> PlanScope | None:
             "to choose one exact zone or chapter"
         )
     return next(iter(candidates.values()))
+
+
+def is_planning_question(text: str) -> bool:
+    """Recognise planning intent without mapping a suburb to a zone."""
+
+    if _PLANNING_QUESTION.search(text):
+        return True
+    try:
+        return explicit_plan_scope(text) is not None
+    except ValueError:
+        return True
 
 
 def planning_scope_facts() -> dict[str, str | int]:

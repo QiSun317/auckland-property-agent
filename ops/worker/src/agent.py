@@ -11,7 +11,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from dataset import Dataset, dataset_definition_facts
 from gemini import GeminiWorkerChatModel
 from grounding import AGENT_RESPONSE_SCHEMA, ground_agent_response
-from planning import PlanningRetriever, explicit_plan_scope
+from planning import (
+    PlanningRetriever,
+    explicit_plan_scope,
+    is_planning_question,
+    planning_scope_facts,
+)
 from tools import collect_tool_facts, create_dataset_tools
 
 SYSTEM_PROMPT = """You are the Auckland Property Intelligence project's data assistant.
@@ -268,6 +273,48 @@ async def run_dataset_agent(
     planning_retriever: PlanningRetriever | None = None,
 ) -> dict[str, Any]:
     required_language = detect_response_language(text)
+    if planning_retriever is not None and is_planning_question(text):
+        try:
+            plan_scope = explicit_plan_scope(text)
+        except ValueError:
+            plan_scope = None
+        if plan_scope is None:
+            facts = {
+                **dataset_definition_facts(dataset),
+                **planning_scope_facts(),
+            }
+            if required_language == "Chinese":
+                answer = (
+                    "本项目不能根据 suburb 推断单个房产的奥克兰统一规划分区。"
+                    "请提供一个精确的规划区名称、zone code 或 H/E 章节，"
+                    "我才能从项目保存的规划条款中检索相关规则。"
+                )
+                limitation = "本项目尚未把具体地址映射到规划区。"
+            else:
+                answer = (
+                    "This project cannot infer an individual property's Auckland "
+                    "Unitary Plan zone from its suburb. Please provide one exact "
+                    "planning-zone name, zone code, or H/E chapter so I can retrieve "
+                    "the relevant rules from the plan clauses stored by this project."
+                )
+                limitation = (
+                    "This project does not currently map individual addresses to "
+                    "planning zones."
+                )
+            return ground_agent_response(
+                {
+                    "on_topic": True,
+                    "answer": answer,
+                    "picks": [],
+                    "citations": [
+                        "constant:plan:exact_zone_required",
+                        "constant:plan:source",
+                    ],
+                    "limitations": [limitation],
+                },
+                dataset,
+                facts,
+            )
     model = GeminiWorkerChatModel(
         api_key=api_key,
         model_name=model_name,

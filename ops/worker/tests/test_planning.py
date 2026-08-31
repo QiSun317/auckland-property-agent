@@ -9,6 +9,7 @@ from planning import (
     CloudflarePlanningRetriever,
     explicit_plan_scope,
     facts_for_plan_hits,
+    is_planning_question,
 )
 from tools import create_dataset_tools
 
@@ -76,6 +77,7 @@ class PlanScopeTests(unittest.TestCase):
 
     def test_does_not_infer_zone_from_suburb(self) -> None:
         self.assertIsNone(explicit_plan_scope("How tall can I build in Remuera?"))
+        self.assertTrue(is_planning_question("How tall can I build in Remuera?"))
 
     def test_rejects_multiple_scopes(self) -> None:
         with self.assertRaisesRegex(ValueError, "multiple planning-zone scopes"):

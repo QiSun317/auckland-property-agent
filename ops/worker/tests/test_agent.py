@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from typing import Any
+from unittest.mock import patch
 
 from fixtures import FIELDS, ROWS
 from langchain_core.messages import AIMessage
@@ -11,6 +12,7 @@ from agent import (
     _run_tool_agent,
     _validate_response_language,
     detect_response_language,
+    run_dataset_agent,
 )
 from dataset import clean_dataset
 
@@ -60,6 +62,30 @@ class ScriptedModel:
 
 
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_plan_scope_is_deterministic_and_does_not_call_model(
+        self,
+    ) -> None:
+        retriever = FakePlanningRetriever()
+        with patch(
+            "agent.GeminiWorkerChatModel",
+            side_effect=AssertionError("model should not be called"),
+        ):
+            result = await run_dataset_agent(
+                "unused",
+                "unused",
+                clean_dataset({"fields": FIELDS, "rows": ROWS}),
+                text="How tall can I build in Remuera?",
+                context="",
+                history=[],
+                planning_retriever=retriever,
+            )
+
+        self.assertIn("cannot infer", result["answer"])
+        self.assertIn("exact planning-zone name", result["answer"])
+        self.assertEqual(result["picks"], [])
+        self.assertEqual(retriever.calls, [])
+        self.assertEqual(len(result["evidence"]), 2)
+
     async def test_explicit_plan_zone_uses_grounded_langchain_tool(self) -> None:
         retriever = FakePlanningRetriever()
         model = ScriptedModel(
