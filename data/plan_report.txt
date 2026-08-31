@@ -1,0 +1,33 @@
+Auckland Unitary Plan — clause extraction
+source: Auckland Unitary Plan (Operative in Part), Auckland Council
+
+24 chapters -> 776 chunks
+parcels covered by a zone chapter: 611,912 / 623,765 (98%)
+
+anomalies:
+  H1: 11 cross-reference(s) rejected as headings: ['H1.6.7', 'H1.6.7', 'H1.6.7', 'H1.6.7', 'H1.6.7']
+  H2: 13 cross-reference(s) rejected as headings: ['H2.6.9', 'H2.6.9', 'H2.6.9', 'H2.6.9', 'H2.6.9']
+  H3: 12 cross-reference(s) rejected as headings: ['H3.6.10', 'H3.6.10', 'H3.6.10', 'H3.6.10', 'H3.6.10']
+  H4: clause order breaks at ['H4.7', 'H4.8', 'H4.6.5', 'H4.6.11']
+  H4: 18 cross-reference(s) rejected as headings: ['H4.6.7', 'H4.6.7', 'H4.6.7', 'H4.6.14', 'H4.6.7']
+  H4: H4.6 skips ['H4.6.1', 'H4.6.2', 'H4.6.3', 'H4.6.4', 'H4.6.6', 'H4.6.7'] ... — those clauses are carried by H4.6 itself, not lost
+  H5: 21 cross-reference(s) rejected as headings: ['H5.6.9', 'H5.6.10', 'H5.6.14', 'H5.6.9', 'H5.6.10']
+  H6: 38 cross-reference(s) rejected as headings: ['H6.6.8', 'H6.6.8', 'H6.6.8', 'H6.6.8', 'H6.6.12']
+  H6: H6.6 skips ['H6.6.17'] — those clauses are carried by H6.6 itself, not lost
+  H6: 4 clause(s) awaiting plan-change text (marked, not dropped): ['H6.6.1', 'H6.6.10', 'H6.6.12', 'H6.6.9']
+  H7: 1 cross-reference(s) rejected as headings: ['H7.9.1']
+  H8: 3 cross-reference(s) rejected as headings: ['H8.11.1', 'H8.6.7.1', 'H8.6.24']
+  H8: 12 leaf clause(s) empty with no plan change to explain it: ['H8.6.10', 'H8.6.11', 'H8.6.12', 'H8.6.13', 'H8.6.14', 'H8.6.15']
+  H9: 1 cross-reference(s) rejected as headings: ['H9.6.2.1']
+  H9: H9.6 skips ['H9.6.1', 'H9.6.2', 'H9.6.3', 'H9.6.4', 'H9.6.5', 'H9.6.6'] ... — those clauses are carried by H9.6 itself, not lost
+  H10: 2 cross-reference(s) rejected as headings: ['H10.6.2.1', 'H10.6.11']
+  H11: 2 cross-reference(s) rejected as headings: ['H11.6.2.1', 'H11.6.9']
+  H12: 2 cross-reference(s) rejected as headings: ['H12.6.2.1', 'H12.6.9']
+  H13: 3 cross-reference(s) rejected as headings: ['H13.6.2.1', 'H13.6.8.1', 'H13.6.10']
+  H14: 1 cross-reference(s) rejected as headings: ['H14.6.2.1']
+  H15: 1 cross-reference(s) rejected as headings: ['H15.6.2.1']
+  H19: clause order breaks at ['H19.12', 'H19.11']
+  H19: 3 cross-reference(s) rejected as headings: ['H19.5.10', 'H19.10.2', 'H19.10.9']
+  E36: 1 cross-reference(s) rejected as headings: ['E36.4.1']
+  E38: 9 cross-reference(s) rejected as headings: ['E38.6', 'E38.4.1', 'E38.4', 'E38.4.1', 'E38.4.5']
+  E39: 8 cross-reference(s) rejected as headings: ['E39.4.5', 'E39.6.2', 'E39.6.1', 'E39.6.4.4.1', 'E39.6.4.5.1']

@@ -22,6 +22,7 @@ Nothing here is macOS-specific — the scheduler is a thin wrapper in ops/, so
 moving to CI means swapping that wrapper, not this file.
 """
 import argparse
+import collections
 import gzip
 import hashlib
 import json
@@ -72,6 +73,55 @@ def check_boundaries(path, prev):
            for f in fc["features"]):
         raise Reject("some features have no name or no geometry")
     return n
+
+
+def check_zones(path, prev):
+    zones = collections.Counter()
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        fc = json.load(fh)
+    feats = fc.get("features", [])
+    if not 120_000 <= len(feats) <= 160_000:
+        raise Reject(f"{len(feats):,} polygons, expected 120k-160k")
+    for f in feats:
+        if not f.get("geometry"):
+            raise Reject("some features have no geometry")
+        zones[(f.get("properties") or {}).get("zone")] += 1
+    # The failure this is really watching for is a silent decode break: if the
+    # service stops publishing its coded-value domains, or the fetch starts
+    # reading NAME (a place label) as the zone, every polygon still arrives and
+    # the count still passes. What does not survive is the zone vocabulary.
+    expected = ["Residential - Mixed Housing Suburban Zone",
+                "Residential - Mixed Housing Urban Zone",
+                "Residential - Single House Zone"]
+    missing = [z for z in expected if zones[z] < 1000]
+    if missing:
+        raise Reject(f"core residential zones missing or tiny: {missing}")
+    unknown = sum(v for k, v in zones.items() if k and k.startswith("UNKNOWN"))
+    if unknown > len(feats) * 0.01:
+        raise Reject(f"{unknown:,} polygons carry codes the service does not define")
+    return len(feats)
+
+
+def check_plan(path, prev):
+    index = json.loads(path.read_text())
+    chapters = index.get("chapters", [])
+    if len(chapters) < 20:
+        raise Reject(f"{len(chapters)} chapters, expected 24")
+    for ch in chapters:
+        pdf = path.parent / ch["file"]
+        if not pdf.exists():
+            raise Reject(f"{ch['clause']}: {ch['file']} missing")
+        if pdf.stat().st_size != ch["bytes"]:
+            raise Reject(f"{ch['clause']}: {ch['file']} is not the size fetched")
+        if pdf.read_bytes()[:4] != b"%PDF":
+            raise Reject(f"{ch['clause']}: {ch['file']} is not a PDF")
+    # The zone chapters are what make a clause reachable from a parcel. A file
+    # that arrives without them still parses and still answers questions, just
+    # never the one that was asked.
+    zoned = {z for ch in chapters for z in ch["zone_codes"]}
+    if len(zoned) < 30:
+        raise Reject(f"only {len(zoned)} zone codes claimed by chapters, expected 30+")
+    return len(chapters)
 
 
 def check_prices(path, prev):
@@ -172,6 +222,34 @@ class Source:
     why: str
 
 
+def promote(staged, artifact):
+    """Move a validated fetch out of incoming and into data/raw.
+
+    Most sources are one file. The plan chapters are twenty-four PDFs plus the
+    index that names them, and they are only meaningful together — an index
+    promoted without its PDFs describes files that are not there. So when the
+    artifact sits inside a directory of its own, the directory is the unit that
+    moves, and it moves whole.
+    """
+    parent = Path(artifact).parent
+    if str(parent) != ".":
+        dest = RAW / parent
+        if dest.exists():
+            shutil.rmtree(dest)
+        os.replace(staged.parent, dest)
+    else:
+        os.replace(staged, RAW / artifact)              # atomically
+
+
+def discard(staged, artifact):
+    """Throw away a staged fetch, whole directory included."""
+    parent = Path(artifact).parent
+    if str(parent) != "." and staged.parent.exists():
+        shutil.rmtree(staged.parent)
+    elif staged.exists():
+        staged.unlink()
+
+
 SOURCES = [
     Source("prices", "fetch_prices.py", "opes_suburbs.json", 30, check_prices,
            "per-suburb valuations; the source refreshes roughly quarterly"),
@@ -180,6 +258,11 @@ SOURCES = [
            "council CVs; set on a 3-year revaluation cycle, corrections in between"),
     Source("boundaries", "fetch_boundaries.py", "auckland_boundaries.geojson", 90,
            check_boundaries, "LINZ edits suburb boundaries a few times a year"),
+    Source("zones", "fetch_zones.py", "unitary_plan_zones.geojson.gz", 90,
+           check_zones,
+           "unitary plan base zones; plan changes land a few times a year"),
+    Source("plan", "fetch_plan.py", "plan/plan_index.json", 90, check_plan,
+           "unitary plan chapter text; moves with plan changes, a few a year"),
     Source("localboards", "fetch_localboards.py", "local_boards.geojson", 365,
            check_localboards, "council local boards; redrawn only at reorganisation"),
     Source("wikipedia", "fetch_wikipedia.py", "wikipedia.json", 180,
@@ -193,7 +276,13 @@ SOURCES = [
            "carded home loan rates; banks reprice within days of a wholesale move"),
 ]
 
-BUILD_STEPS = ["build_db.py", "build_detail.py", "build_map.py"]
+# build_db.py writes a fresh database and swaps it in, so anything that adds
+# tables to it has to run afterwards or be thrown away with the old file. That
+# is why the plan clauses and their vectors are rebuilt here every time rather
+# than carried forward: extraction takes five seconds and embedding twenty-two,
+# which is cheaper than the machinery for keeping a stale copy honest.
+BUILD_STEPS = ["build_db.py", "build_plan.py", "build_embeddings.py",
+               "build_detail.py", "build_map.py"]
 
 # Optional last step: push the rebuilt page to the public site. Off unless
 # AKL_PUBLISH=1, so a local run never publishes by accident.
@@ -333,20 +422,20 @@ def do_run(args):
             steps.append(dict(run_id=run_id, source=src.name, status="failed",
                               started_at=t0, finished_at=datetime.now(),
                               source_hash=None, rows=None, message=f"rejected: {exc}"))
-            staged.unlink()
+            discard(staged, src.artifact)
             continue
 
         digest = sha256(staged)
         if digest == state["last_hash"].get(src.name):
             print(f"  {src.name:<13} unchanged ({rows:,} rows)")
-            staged.unlink()
+            discard(staged, src.artifact)
             steps.append(dict(run_id=run_id, source=src.name, status="unchanged",
                               started_at=t0, finished_at=datetime.now(),
                               source_hash=digest, rows=rows, message=None))
             continue
 
         RAW.mkdir(parents=True, exist_ok=True)
-        os.replace(staged, RAW / src.artifact)          # promote, atomically
+        promote(staged, src.artifact)
         changed.append(src.name)
         print(f"  {src.name:<13} updated ({rows:,} rows)")
         steps.append(dict(run_id=run_id, source=src.name, status="ok",

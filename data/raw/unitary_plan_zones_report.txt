@@ -1,0 +1,15 @@
+Auckland Unitary Plan base zone — fetch report
+source: https://services1.arcgis.com/n4yPwebTjJCmXB6W/arcgis/rest/services/Unitary_Plan_Base_Zone/FeatureServer/0
+licence: CC BY 4.0, Auckland Council
+
+kept    139,410 operative polygons
+of      139,432 published
+
+excluded — not operative:
+  VERSIONSTATUS=5   Proposed                                     12
+  VERSIONSTATUS=7   Subject to Appeal                             4
+
+excluded — retired zone code 58 (DELETED): 0
+
+zone codes seen but not in the service's own domain:
+  (none)

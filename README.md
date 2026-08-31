@@ -9,10 +9,14 @@ python3 scripts/fetch_prices.py      # 各 suburb 房价（217 个页面，约 1
 python3 scripts/fetch_boundaries.py  # LINZ suburb 边界
 python3 scripts/fetch_wikipedia.py   # 各 suburb 维基百科简介（限速，约 3 分钟）
 python3 scripts/fetch_valuations.py  # 62 万个地块的政府估价 CV（约 2 分钟，10 MB）
+python3 scripts/fetch_zones.py       # 统一规划分区多边形（约 1.5 分钟，43 MB）
+python3 scripts/fetch_plan.py        # 统一规划 24 个章节 PDF（8 秒，23 MB）
 python3 scripts/fetch_mortgage_rates.py  # 各银行挂牌房贷利率（1 秒）
 python3 scripts/build_detail.py      # 空间关联 + 按 35 米网格聚合
 python3 scripts/build_map.py         # 生成 heatmap.html + suburb_prices.csv
-python3 scripts/build_db.py          # 装进 DuckDB（约 20 秒）
+python3 scripts/build_db.py          # 装进 DuckDB（约 30 秒）
+python3 scripts/build_plan.py        # 章节 PDF → 可引用的条款块（5 秒）
+python3 scripts/build_embeddings.py  # 条款向量（22 秒；缺 torch 会跳过而非报错）
 python3 scripts/export_state.py      # 导出 CI 需要的 24 KB 状态
 python3 scripts/rate_history.py      # 把今天的利率折进 SCD2 历史
 ```
@@ -22,6 +26,14 @@ python3 scripts/rate_history.py      # 把今天的利率折进 SCD2 历史
 ```bash
 python3 scripts/q.py --schema
 python3 scripts/q.py "SELECT name, avg_house_value FROM suburb_overview ORDER BY 2 DESC LIMIT 10"
+```
+
+查规划条文（分区先过滤，向量只在该分区适用的章节里选）：
+
+```bash
+python3 scripts/plan_search.py "600 平的地能不能切成两块" --zone 18
+python3 scripts/plan_search.py "how tall can I build" --suburb Remuera
+python3 scripts/eval_plan.py --no-log       # 检索质量，过滤 vs 不过滤
 ```
 
 `fetch_*` 只需在数据要更新时重跑（利率例外——它几天就变一次）；改样式只跑最后两个
@@ -41,13 +53,17 @@ python3 scripts/q.py "SELECT name, avg_house_value FROM suburb_overview ORDER BY
 | `heatmap.html` | 独立页面。全区图：发散色阶（蓝＝便宜／红＝贵）、悬停、搜索、数据表。**点任一郊区**进入详情：区内 35 米网格 CV 热力图 + 简介 + 市场指标 + 户型结构 + 房价走势 + CV 分布 + 房贷/地税试算（按该区入门价填好） |
 | `data/suburb_detail.json` | 285 个郊区的网格化 CV（base64 打包）与分位数、直方图 |
 | `data/raw/valuations.jsonl.gz` | 623,765 个计税单元的 CV/LV（2021 与 2024 两次估价）+ 地块中心点 |
+| `data/raw/unitary_plan_zones.geojson.gz` | 139,410 个生效的统一规划基础分区多边形，编码已译成分区名 |
+| `data/raw/unitary_plan_zones_report.txt` | 抓取时排除了哪些（提案中 12、上诉中 4）及依据 |
+| `data/raw/plan/plan_index.json` | 24 个章节的 URL、字节数、sha256、各自管辖的分区码 |
+| `data/plan_report.txt` | 条款提取报告：各章块数、被剔除的交叉引用、编号缺口、因规划变更而空白的条款 |
 | `data/raw/wikipedia.json` | 204 个郊区的维基百科简介 |
 | `data/raw/mortgage_rates.json` | 各银行挂牌房贷利率（72 行产品 + 五大行每档最低值） |
 | `data/suburb_prices.csv` | 286 行扁平表，供 agent 直接查询 |
 | `data/join_report.txt` | 边界与价格的匹配结果、无数据郊区清单 |
 | `data/raw/opes_suburbs.json` | 原始抓取记录，含 2000 年至今的年度价格序列 |
 | `data/raw/auckland_boundaries.geojson` | LINZ 郊区边界（WGS84，已简化） |
-| `data/auckland.duckdb` | **主数据库**，59 MB，见下节 |
+| `data/auckland.duckdb` | **主数据库**，282 MB，见下节 |
 | `scripts/q.py` | 命令行查询（默认只读）；`--schema` 打印表结构 |
 | `queries/examples.sql` | 7 条可直接跑的示例查询 |
 | `build/heatmap_body.html` | 同一页面的 body-only 版本（用于发布成 Artifact） |
@@ -75,6 +91,19 @@ name, type, major, price, yoy, growth, rent, yield, pop, days, sold, lat, lon, u
 - **边界**：LINZ《NZ Suburbs and Localities》，经 LINZ 官方 ArcGIS Online 要素服务
   取得，CC BY 4.0。查询条件 `territorial_authority LIKE '%Auckland%'`（跨界的
   Pukekohe、Waiuku 在该字段里是 `Auckland, Waikato District`），几何按约 22 米简化。
+- **规划条文**：[Auckland Unitary Plan (Operative in Part)](https://www.aucklandcouncil.govt.nz/plans-projects-policies-reports-bylaws/our-plans-strategies/unitary-plan/Pages/the-auckland-unitary-plan-operative-in-part.aspx)
+  的章节 PDF，24 章（H1–H21 各分区 + E36 自然灾害 + E38/E39 城乡细分），覆盖
+  98% 的地块。议会版权，PDF 不进仓库，`plan_index.json` 留 sha256 可核对。
+  **章节与分区的对应写在数据里，不靠检索去猜**——H5 就是 Mixed Housing Urban
+  就是分区码 60。E38 的适用范围是条文自己写的补集（"all zones except" E39 列出的九个），
+  所以存成排除列表而不是枚举，议会加新分区时不会失效。
+- **规划分区**：Auckland Council 的 `Unitary_Plan_Base_Zone` 要素服务
+  （公开、无需鉴权），CC BY 4.0。两处不注意就会得出自信的错答案：
+  `NAME` 字段不是分区名而是地名（学校、海湾、郊区混在一起，还有大量空值），
+  真正的分区在 `ZONE` 编码里；`VERSIONSTATUS` 区分生效与提案，139,432 条里
+  只有 16 条不是 Operative——正是这个比例让人想跳过过滤，而跳过之后错误要等到
+  落在某个人的地块上才会暴露。编码字典在运行时从服务读取而非写死：议会会加新分区
+  （70–72 是中密度新规带来的），写死的表遇到新编码不会报错，只会静默丢弃。
 - **政府估价 CV**：Auckland Council 的 `AGOL_RateAccountInfo1_gdb` 要素服务
   （公开、无需鉴权），逐计税单元给出 `CV/LV`（2021-06-01 估值）与 `LCV/LLV`
   （2024-05-01 重估）。用 `returnCentroid=true` 只取地块中心点，避免拉 62 万个多边形。
@@ -789,7 +818,76 @@ RAG 真正难的那一半 —— **接地** —— 这里已经做了，而且�
 学区划分文件、逐房产问答都属于这一类。到时候正确架构是**混合检索**：数值走 SQL，文本走向量。
 技术上已就位 —— 项目用的 DuckDB 自带 `vss` 扩展，HNSW 索引可建，不用换库。
 
-### 模型选区，但被三道闸门约束### 模型选区，但被三道闸门约束
+**这个条件现在满足了，混合检索也建好并量过了。** 统一规划的 24 个章节共 94 万字符
+（约 23.5 万 token），确实塞不进上下文，也无法像 `suburb_traits.py` 那样预抽成几百行给人校对。
+
+### 分区先过滤，向量只在里面选
+
+这是整套设计的要点，也是唯一值得强调的一句：**地块属于哪个分区不是要从提问措辞里猜的东西，
+而是建库时点在多边形内算好的事实**。所以分区决定章节，向量只决定章节内的哪一条。
+
+24 个分区章节说的是同一批事情、用的是几乎同样的措辞、给的是不同的数字。不过滤时，
+「能建多高」是 24 章都能回答的问题，最近邻等于掷骰子——而且掷出来的结果读起来跟正确答案
+一模一样。过滤之后，错分区的答案不是不太可能，是够不着。
+
+30 条用例（`evals/plan_cases.jsonl`，中英文各半），`scripts/eval_plan.py` 两条路都跑：
+
+| | recall@5 | MRR | 跨分区命中 |
+|---|---|---|---|
+| 分区过滤 | **90%** | 0.72 | **0** |
+| 不过滤 | 50% | 0.24 | 115 |
+
+跨分区命中那一列是真正要看的：它数的是"返回了一条不管这个分区的条款"。过滤路径下它按构造为零，
+跑不过滤那一条只是为了把"否则会是多少"摆出来，而不是嘴上说说。
+
+换模型也量了。`e5-base`（768 维）过滤后 90% / MRR 0.72，`e5-small`（384 维）83% / 0.61 但编码快三倍。
+顺带一个观察：**编码器越弱，结构化过滤的增益越大**——e5-small 是 33%→83%（+50 分），
+e5-base 是 50%→90%（+40 分）。过滤能补偿模型能力，但替代不了。
+
+### 三条还够不到的用例，留在套件里
+
+`height-mhu-zoned`（「Mixed Housing Urban 区能建多高」）、`recession-zh`（「边界后退斜面角度」）、
+`activity-table-mhu`。第一条曾让我推出一个错结论：既然分区已由过滤器精确解决，
+把分区名从查询里剥掉应该有帮助。量下来是反的——H5.6.4 从第 9 掉到 20 名开外，
+Single House 那条从第 8 掉到第 15。真正的差别不在分区名，
+而在「建筑高度限制是多少」是完整名词短语、「区能建多高」是口语碎片，剥字只会让碎片更碎。
+改动已撤销，结论记在 `plan_search.py` 的模块文档里。**检索在这里的短板是短口语提问**，
+这是要量的东西，不是可以猜第二次的东西。
+
+### 写 eval 的过程本身纠出了三处错
+
+标准答案是我照着「各章编号应该平行」的假设写的，三次都错：Building height 在 H5 是 6.4，
+在 H3 是 **6.6**，在 H6 是 **6.5**——各章独立编号。而「最小可细分面积」我指向了
+`E38.6.1 Site size and shape`，那条其实只是**指路条款**，真正的数字在 `E38.8` 那一支下面。
+修正之后 recall 从 73% 升到 90%，**升的是用例的准确度，不是检索的能力**。
+带着错答案的 eval 比没有 eval 更糟，因为它会让你去修一个没坏的东西。
+
+### 为什么按条款号切块，而不是按 token 数
+
+固定 token 切是通行做法，在这里是错的。规划条文自带边界——`H5.6.4` 就是一条完整的高度规则，
+有自己的编号——**而那个编号就是全部意义所在**：回答"11 米，见 H5.6.4"是可以回查核对的，
+引用了不存在的条款、或该条款其实说的是别的，都能自动抓出来。每 800 token 切一刀，
+这套校验就没有东西可以挂靠。切块细节都在 `scripts/build_plan.py` 的文档里，三件事值得单独说：
+
+- **左边距栏**。每章都有一列窄的规划变更标注（`PC 120 (see Modifications)`），
+  `pdftotext -layout` 会把它拼进正文行，于是 `PC 120 (see    H5.6.5. Height in relation to boundary`
+  变成一行。改按 x 坐标读，595pt 页宽下 x<88 干净地切开。这一栏是**留下来当元数据**的：
+  一条正在被变更的条款，答案需要带上这个提醒。
+- **标题 vs 交叉引用**。活动表里满是对标准的编号引用，换行后一个表格单元格能让
+  `H5.6.5. Height in` 单独占一行、连句点都有，长得跟标题一模一样。它假装不了的是位置和序列：
+  真标题这一列的编号各出现一次、并沿页面递增，而交叉引用列会重复、会回头。
+  用"最长递增子序列"打分而不是数行数——H4 里交叉引用比 14 条真标准还多，数行数会整列选错。
+- **有些条款是真空的**。`H6.6.10 Maximum impervious area` 存在、活动表引用它、
+  而它当前一个字都没有——PC 120 把正文抽走了，替代文本尚未生效。这不是提取失败，
+  建成了 `status = 'replaced_by_plan_change'`：被问到这个数字时，
+  唯一诚实的回答是"该条正在被替换"，既不是编一个数填坑，也不是沉默。
+
+有一处提取是**做不到**的，写在报告里而不是藏起来：H4（Mixed Housing Suburban，21.6 万地块，
+全区最大）的标准条款在文字层里只有标题没有编号——`pdftotext` 看到的也一样，
+说明编号是画上去的不是写上去的。那些条款退回到父节 `H4.6` 承载，
+**引用仍然真实，只是精度变粗**。`data/plan_report.txt` 会把这类缺口逐条列出来。
+
+### 模型选区，但被三道闸门约束
 
 页面把**全部 205 个区连同真实数据**（字段表 + 每区一行，约 21 KB / 7k token）连同问题一起
 发给模型，由模型自己读、自己选、自己解释，推荐几个由问题决定 —— 不再固定 3 个。
@@ -1056,20 +1154,34 @@ $600k 的房子和 $2M 的房子，UAGC 和垃圾费是一模一样的 $999。
 
 ## 数据库：DuckDB
 
-`data/auckland.duckdb`，59 MB，六张表一个视图：
+`data/auckland.duckdb`，282 MB，十张表四个视图。主要的几张：
 
 | 表 | 行数 | 内容 |
 |---|---|---|
 | `suburb` | 286 | LINZ 多边形 + 质心 + 面积，所有东西挂在它上面 |
-| `suburb_market` | 205 | Opes 的估值、租金、回报、成交、户型比例 |
+| `suburb_market`（视图） | 205 | Opes 的估值、租金、回报、成交、户型比例 |
 | `suburb_price_history` | 5,070 | 2000 年至今的年度估值序列 |
 | `suburb_description` | 204 | 维基百科简介 |
-| `rating_unit` | 623,765 | 逐地块：估价号、地址、地块面积、2021/2024 两次 CV 与 LV、坐标 |
-| `meta` | 8 | 各数据源的口径与日期 |
+| `rating_unit` | 623,765 | 逐地块：估价号、地址、地块面积、坐标、所属 suburb、规划分区 |
+| `valuation` | 1,247,530 | 逐地块逐轮估价（2021/2024 两次 CV 与 LV） |
+| `planning_zone` | 139,410 | 统一规划基础分区多边形 + 包围盒 |
+| `planning_zone_ref` | 49 | 分区编码 → 分区名 / 大类，从上表提出来的小字典 |
+| `plan_clause` | 776 | 统一规划条款块：条号、标题、页码、适用分区、排除分区、规划变更标记、状态、原文 |
+| `plan_vec_e5_base` | 776 | 条款向量（768 维，已归一化，点积即余弦） |
+| `embedding_run` | 1+ | 每个模型的 HF id、维度、查询/文档前缀、建立时间 |
 | `suburb_overview`（视图） | 286 | 上面几张表拼好的一行一区，大部分问题查它就够 |
 
-`rating_unit.suburb_id` 在建库时就用点在多边形内算好了，所以后续查询都是普通 join，
-不用每次跑空间运算。62.4 万条里 3,475 条（0.6%）不落在任何 suburb 内。
+`rating_unit.suburb_id` 和 `planning_zone_code` 都在建库时用点在多边形内算好了，
+后续查询都是普通 join，不用每次跑空间运算。62.4 万条里 3,476 条（0.6%）不落在任何
+suburb 内，39 条（0.006%）没有规划分区。
+
+分区名走 `rating_unit_current` 视图直接给出（`planning_zone` / `planning_group_zone` 列），
+而不是留个编码让查询方自己去翻——没人知道 Mixed Housing Urban 是 60。
+
+分区关联本身有两个坑，都记在 `build_db.py` 的 `DEFERRED_ZONES` 注释里：海岸海洋区
+画在沿岸陆地分区之上而非之旁，8,833 个双重命中全部由它造成，降级它之后歧义归零；
+而它那种横跨海湾的包围盒会让 R 树完全失效，把这四类延后到第二趟并在
+`ST_Intersects` 前加一道纯数值包围盒判断，整个关联从 431 秒降到约 4 秒。
 
 ### 为什么选它
 

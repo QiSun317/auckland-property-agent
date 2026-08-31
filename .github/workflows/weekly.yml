@@ -56,7 +56,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install duckdb deltalake 'pyarrow>=21' databricks-sdk mlflow
+      - run: pip install duckdb deltalake 'pyarrow>=21' databricks-sdk mlflow pypdf
       - run: npm --prefix evals install --no-audit --no-fund
 
       # Bulky, re-derivable. Restored for speed; a miss just refetches.

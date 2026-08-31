@@ -1,0 +1,30 @@
+{"id": "height-mhu-en", "q": "how tall can I build", "zone": 60, "want": "H5.6.4", "why": "the plainest question there is; if this misses nothing else matters"}
+{"id": "height-mhu-zh", "q": "建筑高度限制是多少", "zone": 60, "want": "H5.6.4", "why": "same question in Chinese against English text — the cross-lingual base case"}
+{"id": "height-mhu-zh-colloquial", "q": "这里能建多高", "zone": 60, "want": "H5.6.4", "why": "how someone actually asks it; short spoken fragments are the measured weak spot"}
+{"id": "height-mhu-zoned", "q": "Mixed Housing Urban 区能建多高", "zone": 60, "want": "H5.6.4", "why": "naming the zone as well as asking; stripping the name made this worse, not better"}
+{"id": "height-shz-en", "q": "maximum building height", "zone": 19, "want": "H3.6.6", "why": "same wording, different zone. Building height is H5.6.4 but H3.6.6 — the chapters do not number in parallel and assuming they did put a wrong answer in this file"}
+{"id": "height-thab-zh", "q": "建筑高度限制是多少", "zone": 8, "want": "H6.6.5", "why": "identical query to height-mhu-zh; only the zone differs"}
+{"id": "recession-en", "q": "recession plane from the boundary", "zone": 60, "want": "H5.6.5", "why": "the term of art people bring from their surveyor"}
+{"id": "recession-zh", "q": "边界后退斜面角度", "zone": 60, "want": "H5.6.5", "why": "the same term of art, translated"}
+{"id": "yards-en", "q": "how far from the boundary must the building sit", "zone": 60, "want": "H5.6.8", "why": "described rather than named — nobody says yards"}
+{"id": "yards-zh", "q": "房子离地界要留多远", "zone": 60, "want": "H5.6.8", "why": "described, in Chinese"}
+{"id": "impervious-en", "q": "how much of the site can be paved", "zone": 60, "want": "H5.6.9", "why": "plain words for maximum impervious area"}
+{"id": "impervious-zh", "q": "不透水面积上限", "zone": 60, "want": "H5.6.9", "why": "the technical term, in Chinese"}
+{"id": "outdoor-living-en", "q": "outdoor living space requirement", "zone": 60, "want": "H5.6.14", "why": "named directly"}
+{"id": "outdoor-living-zh", "q": "户外活动空间要求", "zone": 60, "want": "H5.6.14", "why": "named directly, in Chinese"}
+{"id": "daylight-en", "q": "daylight setbacks to habitable rooms", "zone": 60, "want": "H5.6.13", "why": "two concepts in one question"}
+{"id": "fences-zh", "q": "前院围墙最高能多高", "zone": 60, "want": "H5.6.15", "why": "fences are a separate standard from building height and get confused with it"}
+{"id": "rainwater-en", "q": "do I need a rainwater tank", "zone": 60, "want": "H5.6.17", "why": "a yes/no question whose answer is a standard"}
+{"id": "home-occupation-zh", "q": "可以在家里开工作室吗", "zone": 60, "want": "H5.6.2", "why": "an activity question, not a dimension question"}
+{"id": "outlook-en", "q": "outlook space from a living room window", "zone": 60, "want": "H5.6.12", "why": "easily confused with daylight and with yards"}
+{"id": "subdiv-size-en", "q": "minimum site size to subdivide", "zone": 18, "want": "E38.8", "why": "the minimum is not in one clause: E38.6.1 Site size and shape only points at E38.8, where the residential standards actually live. Wanting E38.6.1 was reading the index and calling it the answer"}
+{"id": "subdiv-size-zh", "q": "600 平的地能不能切成两块", "zone": 18, "want": "E38.8", "why": "the question this whole corpus was fetched for. A 600m2 parent site is under a hectare, so E38.8.2.3 is the operative one; E38.8 accepts its whole subtree"}
+{"id": "subdiv-size-zh-plain", "q": "最小可细分地块面积", "zone": 18, "want": "E38.8", "why": "the same thing asked formally"}
+{"id": "subdiv-crosslease-en", "q": "cross lease subdivision", "zone": 18, "want": "E38.7.2", "why": "a specific subdivision mechanism people arrive already knowing the name of"}
+{"id": "flood-zh", "q": "这块地会不会淹水", "zone": 18, "want": "E36", "why": "natural hazards is region-wide; any E36 clause counts, the chapter is the answer"}
+{"id": "flood-en", "q": "is this property in a flood plain", "zone": 60, "want": "E36", "why": "same, in English, different zone — E36 applies regardless"}
+{"id": "held-impervious-thab", "q": "maximum impervious area", "zone": 8, "want": "H6.6.10", "why": "the clause exists but plan change 120 took its text; retrieval must still reach it so the status can be reported"}
+{"id": "zone-desc-mhu", "q": "what is the Mixed Housing Urban zone", "zone": 60, "want": "H5.1", "why": "a question that really is about the zone — zone description is the right answer here, unlike everywhere else"}
+{"id": "activity-table-mhu", "q": "which activities need resource consent", "zone": 60, "want": "H5.4", "why": "the activity table, which is a table and chunks badly"}
+{"id": "large-lot-height", "q": "建筑高度限制是多少", "zone": 23, "want": "H1.6.4", "why": "Large Lot numbers building height 6.4 like H5 does, which is coincidence not structure"}
+{"id": "rural-subdiv-zh", "q": "乡村土地细分面积要求", "zone": 16, "want": "E39", "why": "rural subdivision is E39 not E38; the region-wide pair must not be interchangeable"}

@@ -63,6 +63,29 @@ CBD = (174.7645, -36.8443)
 # plausible-looking wrong number. always_xy pins the input order explicitly.
 TO_NZTM = "ST_Transform({}, 'EPSG:4326', 'EPSG:2193', always_xy := true)"
 
+# Unitary Plan base zones held back to a second pass when a parcel falls in
+# more than one. Two independent reasons pick out the same four, which is why
+# one pass can serve both.
+#
+# Semantically they are subordinate. The General Coastal Marine Zone governs
+# the water below mean high water springs and is drawn over the coastal land
+# zones rather than beside them, so a parcel matching it *and* a land zone is
+# in the land zone. That single overlap explains every one of the 8,833 double
+# matches in this data — 8,327 of them Hauraki Gulf Islands — and deferring it
+# leaves zero parcels ambiguous. Road, Water and the transport corridor are the
+# same shape of thing: real answers when they are the only answer, never the
+# answer when a land zone is also on offer.
+#
+# Geometrically they are the expensive ones. A coastal polygon's bounding box
+# spans the gulf, so the R-tree prunes nothing and the exact test runs against
+# thousands of vertices. Held back, the other 55,004 polygons resolve 621,650
+# parcels in 1.4 s.
+#
+# Not to be confused with ZONES below, which is a geographic grouping of local
+# boards and has nothing to do with the plan.
+DEFERRED_ZONES = (27, 25, 30, 26)   # Road, Water, General Coastal Marine,
+                                    # Strategic Transport Corridor
+
 # The 21 local boards grouped the way Aucklanders actually talk about the city.
 ZONES = {
     "北岸": ["Hibiscus and Bays", "Upper Harbour", "Kaipatiki", "Devonport - Takapuna"],
@@ -392,6 +415,26 @@ def main():
     con.execute("DELETE FROM suburb_description")  # carried forward, now refreshed
     con.executemany("INSERT INTO suburb_description VALUES (?,?,?,?,?,?,?)", desc)
 
+    # ---- unitary plan base zones --------------------------------------------
+    # The zone is the join that makes the plan text answerable. "Can I subdivide
+    # this section" is two lookups wearing one question: which zone the parcel
+    # is in, which is geometry, and what that zone permits, which is prose in
+    # the plan. Neither half answers it alone.
+    #
+    # Kept whole rather than reduced to a per-parcel label, because a dropped
+    # pin has no parcel to look up. The bounding-box columns are materialised
+    # here because the second resolution pass below needs them as plain numbers.
+    con.execute(f"""
+        CREATE OR REPLACE TABLE planning_zone AS
+        SELECT row_number() OVER (ORDER BY zone_code, place_name) AS zone_poly_id,
+               zone_code::INTEGER AS zone_code, zone,
+               group_code::INTEGER AS group_code, group_zone,
+               place_name, geom,
+               ST_XMin(geom) AS x0, ST_XMax(geom) AS x1,
+               ST_YMin(geom) AS y0, ST_YMax(geom) AS y1
+        FROM ST_Read('/vsigzip/{RAW / "unitary_plan_zones.geojson.gz"}');
+    """)
+
     # ---- rating units + valuations ------------------------------------------
     tmp = DATA / "_valuations_staged.jsonl.gz"
     n_raw = stage_valuations(tmp)
@@ -415,19 +458,54 @@ def main():
     """)
     tmp.unlink()
 
+    # Which zone each parcel is in. Two passes, and the order of operations in
+    # the second one is not stylistic: writing the leftovers as a correlated
+    # NOT EXISTS inside the join takes 508 s, because DuckDB runs ST_Intersects
+    # before it filters. Materialising the ~2,100 leftovers first and putting a
+    # plain numeric bounding-box test ahead of ST_Intersects gives the same
+    # answer in 2.4 s. Whole join: 431 s -> about 4 s.
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE ru_zone AS
+        SELECT r.valuation_ref, min(z.zone_code) AS zone_code
+        FROM ru_new r JOIN planning_zone z ON ST_Intersects(z.geom, r.geom)
+        WHERE z.zone_code NOT IN {DEFERRED_ZONES}
+        GROUP BY 1;
+    """)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE ru_left AS
+        SELECT r.valuation_ref, r.lon, r.lat, r.geom
+        FROM ru_new r
+        WHERE NOT EXISTS (SELECT 1 FROM ru_zone z
+                          WHERE z.valuation_ref = r.valuation_ref);
+    """)
+    con.execute(f"""
+        INSERT INTO ru_zone
+        SELECT r.valuation_ref, min(z.zone_code)
+        FROM ru_left r JOIN planning_zone z
+          ON r.lon BETWEEN z.x0 AND z.x1 AND r.lat BETWEEN z.y0 AND z.y1
+         AND ST_Intersects(z.geom, r.geom)
+        WHERE z.zone_code IN {DEFERRED_ZONES}
+        GROUP BY 1;
+    """)
+
     if fresh:
         con.execute("""CREATE TABLE rating_unit AS
-            SELECT ru_id, valuation_ref, address, land_area_m2, lon, lat, geom,
-                   suburb_id, current_date AS first_seen, current_date AS last_seen
-            FROM ru_new""")
+            SELECT n.ru_id, n.valuation_ref, n.address, n.land_area_m2,
+                   n.lon, n.lat, n.geom, n.suburb_id,
+                   z.zone_code AS planning_zone_code,
+                   current_date AS first_seen, current_date AS last_seen
+            FROM ru_new n LEFT JOIN ru_zone z USING (valuation_ref)""")
     else:
         con.execute("""
             CREATE OR REPLACE TABLE rating_unit AS
             SELECT n.ru_id, n.valuation_ref, n.address, n.land_area_m2,
                    n.lon, n.lat, n.geom, n.suburb_id,
+                   z.zone_code AS planning_zone_code,
                    coalesce(o.first_seen, current_date) AS first_seen,
                    current_date AS last_seen
-            FROM ru_new n LEFT JOIN prev.rating_unit o USING (valuation_ref);""")
+            FROM ru_new n
+            LEFT JOIN ru_zone z USING (valuation_ref)
+            LEFT JOIN prev.rating_unit o USING (valuation_ref);""")
     # No R-tree: measured on this data a vectorised scan with ST_Distance_Sphere
     # answers a 1.5 km radius query in ~20 ms, beating the indexed ST_Within
     # path, and the index cost ~40 MB. Add one if this grows 10x.
@@ -458,9 +536,20 @@ def main():
 
     -- Revaluations are region-wide, so "current" is one global date. That keeps
     -- this a cheap equality filter instead of a per-row window function.
+    -- 57 rows lifted out of the 139k polygons so anything that needs to turn a
+    -- zone code into words does not have to touch the geometry table. Names
+    -- rather than codes are what reaches the views below: a question like
+    -- "how many Mixed Housing Urban parcels" has to be answerable by whoever
+    -- writes the SQL, and nobody knows that Mixed Housing Urban is 60.
+    CREATE OR REPLACE TABLE planning_zone_ref AS
+    SELECT DISTINCT zone_code, zone, group_code, group_zone FROM planning_zone;
+
     CREATE OR REPLACE VIEW rating_unit_current AS
-    SELECT r.*, v.valuation_date, v.cv, v.lv
-    FROM rating_unit r JOIN valuation v USING (ru_id)
+    SELECT r.*, pz.zone AS planning_zone, pz.group_zone AS planning_group_zone,
+           v.valuation_date, v.cv, v.lv
+    FROM rating_unit r
+    JOIN valuation v USING (ru_id)
+    LEFT JOIN planning_zone_ref pz ON pz.zone_code = r.planning_zone_code
     WHERE v.valuation_date = (SELECT max(valuation_date) FROM valuation);
 
     CREATE OR REPLACE VIEW suburb_overview AS
@@ -508,7 +597,10 @@ def main():
                (SELECT count(*) FROM rating_unit),
                (SELECT count(*) FROM rating_unit WHERE suburb_id IS NULL),
                (SELECT count(*) FROM valuation),
-               (SELECT count(*) FROM suburb_description)""").fetchone()
+               (SELECT count(*) FROM suburb_description),
+               (SELECT count(*) FROM planning_zone),
+               (SELECT count(*) FROM rating_unit WHERE planning_zone_code IS NULL)
+        """).fetchone()
     if not fresh:
         con.execute("DETACH prev")
     con.close()
@@ -521,7 +613,9 @@ def main():
     print(f"  market_snapshot     {s[1]:>9,}  (+{added_market} this run, "
           f"{s[2]} release(s), latest {as_at})")
     print(f"  suburb_description  {s[6]:>9,}")
-    print(f"  rating_unit         {s[3]:>9,}  ({s[4]:,} outside every suburb)")
+    print(f"  rating_unit         {s[3]:>9,}  ({s[4]:,} outside every suburb, "
+          f"{s[8]:,} with no plan zone)")
+    print(f"  planning_zone       {s[7]:>9,}")
     print(f"  valuation           {s[5]:>9,}  (+{added_val:,} this run)")
     print(f"{DB} — {DB.stat().st_size / 1e6:.1f} MB")
 

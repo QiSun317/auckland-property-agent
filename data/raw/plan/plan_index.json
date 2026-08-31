@@ -1,0 +1,316 @@
+{
+  "source": "Auckland Unitary Plan (Operative in Part), Auckland Council",
+  "base": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative",
+  "chapters": [
+    {
+      "clause": "H1",
+      "title": "H1 Residential - Large Lot Zone",
+      "zone_codes": [
+        23
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H1%20Residential%20-%20Large%20Lot%20Zone.pdf",
+      "bytes": 218495,
+      "sha256": "7ab59f1af82d02cd0080f6bb651c021e237ec2d2fb0e28efaf0f63303b22ea58",
+      "file": "H1.pdf"
+    },
+    {
+      "clause": "H2",
+      "title": "H2 Residential - Rural and Coastal Settlement Zone",
+      "zone_codes": [
+        20
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H2%20Residential%20-%20Rural%20and%20Coastal%20Settlement%20Zone.pdf",
+      "bytes": 259866,
+      "sha256": "08872eef131bd297c0bc5e417425dcc3f1ce800e7deeef0ebf0e5da822b07ca1",
+      "file": "H2.pdf"
+    },
+    {
+      "clause": "H3",
+      "title": "H3 Residential - Single House Zone",
+      "zone_codes": [
+        19
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H3%20Residential%20-%20Single%20House%20Zone.pdf",
+      "bytes": 421389,
+      "sha256": "815baf606e760be19c4b10f1c69fb8934dc3893cb227094f0ebdb8c4c299de79",
+      "file": "H3.pdf"
+    },
+    {
+      "clause": "H4",
+      "title": "H4 Residential - Mixed Housing Suburban Zone",
+      "zone_codes": [
+        18
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H4%20Residential%20-%20Mixed%20Housing%20Suburban%20Zone.pdf",
+      "bytes": 702300,
+      "sha256": "2b0692b43f10649517fe2f6c4c077310b17c2d23b72aa40550251ef4275a33df",
+      "file": "H4.pdf"
+    },
+    {
+      "clause": "H5",
+      "title": "H5 Residential - Mixed Housing Urban Zone",
+      "zone_codes": [
+        60
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H5%20Residential%20-%20Mixed%20Housing%20Urban%20Zone.pdf",
+      "bytes": 549269,
+      "sha256": "aa4c4ad937db63ac3c1e3d93129315bae0318917f50ef01d7d847779fbf995b6",
+      "file": "H5.pdf"
+    },
+    {
+      "clause": "H6",
+      "title": "H6 Residential - Terrace Housing and Apartment Buildings Zone",
+      "zone_codes": [
+        8
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H6%20Residential%20-%20Terrace%20Housing%20and%20Apartment%20Buildings%20Zone.pdf",
+      "bytes": 2743053,
+      "sha256": "463b604d30cbaa6eb88aad2dd119c6fa317b355abba069f6638f23e685d99768",
+      "file": "H6.pdf"
+    },
+    {
+      "clause": "H7",
+      "title": "H7 Open Space zones",
+      "zone_codes": [
+        62,
+        34,
+        31,
+        32,
+        33
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H7%20Open%20Space%20zones.pdf",
+      "bytes": 273035,
+      "sha256": "7b52ec58a08916e9022e0e0d04bb584b96ce09a2c03683dbb503ba3fae9f4f0c",
+      "file": "H7.pdf"
+    },
+    {
+      "clause": "H8",
+      "title": "H8 Business - City Centre Zone",
+      "zone_codes": [
+        35
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H8%20Business%20-%20City%20Centre%20Zone.pdf",
+      "bytes": 5892522,
+      "sha256": "d44a6f85bb1c801ec221c8d60a6555642aeeddfd1fe72d805c7aab6541f85011",
+      "file": "H8.pdf"
+    },
+    {
+      "clause": "H9",
+      "title": "H9 Business - Metropolitan Centre Zone",
+      "zone_codes": [
+        10
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H9%20Business%20-%20Metropolitan%20Centre%20Zone.pdf",
+      "bytes": 799684,
+      "sha256": "20729c122e21fa6277a6d92df7c60e267ebf91dfa1136acd4ec70d4ce3bcbb62",
+      "file": "H9.pdf"
+    },
+    {
+      "clause": "H10",
+      "title": "H10 Business - Town Centre Zone",
+      "zone_codes": [
+        22
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H10%20Business%20-%20Town%20Centre%20Zone.pdf",
+      "bytes": 2062616,
+      "sha256": "61156a7979e03e36cccb142f1dc936d32c2bf477b7526d89da283bbe965b18b7",
+      "file": "H10.pdf"
+    },
+    {
+      "clause": "H11",
+      "title": "H11 Business - Local Centre Zone",
+      "zone_codes": [
+        7
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H11%20Business%20-%20Local%20Centre%20Zone.pdf",
+      "bytes": 1394214,
+      "sha256": "c1fc7da2025631ad7fcf024c30971d797fd219a3e7df8448d239fd5e051d976e",
+      "file": "H11.pdf"
+    },
+    {
+      "clause": "H12",
+      "title": "H12 Business - Neighbourhood Centre Zone",
+      "zone_codes": [
+        44
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H12%20Business%20-%20Neighbourhood%20Centre%20Zone.pdf",
+      "bytes": 1165629,
+      "sha256": "6de3ba532c238b142a2a4dd3216ac4f21eed3b8d52688fbd5097e67b1f300d00",
+      "file": "H12.pdf"
+    },
+    {
+      "clause": "H13",
+      "title": "H13 Business - Mixed Use Zone",
+      "zone_codes": [
+        12
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H13%20Business%20-%20Mixed%20Use%20Zone.pdf",
+      "bytes": 606518,
+      "sha256": "03eed94d034ce31f7e64a61fbbb449f9cb030505b93f9dbd8063d316d7def6c2",
+      "file": "H13.pdf"
+    },
+    {
+      "clause": "H14",
+      "title": "H14 Business - General Business Zone",
+      "zone_codes": [
+        49
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H14%20Business%20-%20General%20Business%20Zone.pdf",
+      "bytes": 1034727,
+      "sha256": "b6dbba555d61ed9391604c499ff2883b7e9bb94303f4e3a52ddf2c8348657c8d",
+      "file": "H14.pdf"
+    },
+    {
+      "clause": "H15",
+      "title": "H15 Business - Business Park Zone",
+      "zone_codes": [
+        1
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H15%20Business%20-%20Business%20Park%20Zone.pdf",
+      "bytes": 1163449,
+      "sha256": "2297f9c2bc7e3e194608e55cf6ff18dde419669b597fed6252bed0b70f09589b",
+      "file": "H15.pdf"
+    },
+    {
+      "clause": "H16",
+      "title": "H16 Business - Heavy Industry Zone",
+      "zone_codes": [
+        5
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H16%20Business%20-%20Heavy%20Industry%20Zone.pdf",
+      "bytes": 169455,
+      "sha256": "537994fc6ff289ed28e6d6ef8e7b62d3212b424bb5549bcbd8397def8ceb9315",
+      "file": "H16.pdf"
+    },
+    {
+      "clause": "H17",
+      "title": "H17 Business - Light Industry Zone",
+      "zone_codes": [
+        17
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H17%20Business%20-%20Light%20Industry%20Zone.pdf",
+      "bytes": 173083,
+      "sha256": "cb4f70a281490aeb7a8ba44779ab9a896f67a9632fb5bbf5bd3b608f9b1a73f9",
+      "file": "H17.pdf"
+    },
+    {
+      "clause": "H18",
+      "title": "H18 Future Urban Zone",
+      "zone_codes": [
+        4
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H18%20Future%20Urban%20Zone.pdf",
+      "bytes": 279145,
+      "sha256": "a19b4eda9cfa5529f48c01290bb621baae0cd525a82371987871a7f331d3b573",
+      "file": "H18.pdf"
+    },
+    {
+      "clause": "H19",
+      "title": "H19 Rural zones",
+      "zone_codes": [
+        3,
+        11,
+        15,
+        16,
+        46
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H19%20Rural%20zones.pdf",
+      "bytes": 588131,
+      "sha256": "5c5c3e95ec43bfe7bfa03363f77f3bde89dbf4dc17bbd720b5db562513e146ff",
+      "file": "H19.pdf"
+    },
+    {
+      "clause": "H20",
+      "title": "H20 Rural - Waitakere Foothills Zone",
+      "zone_codes": [
+        68
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H20%20Rural%20-%20Waitakere%20Foothills%20Zone.pdf",
+      "bytes": 277600,
+      "sha256": "f7dc7e49f702e7b8bd5c2bf37f1119f5bb4c1f8ac4123fca1029aa97b0a61db7",
+      "file": "H20.pdf"
+    },
+    {
+      "clause": "H21",
+      "title": "H21 Rural - Waitakere Ranges Zone",
+      "zone_codes": [
+        69
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20H%20Zones/H21%20Rural%20-%20Waitakere%20Ranges%20Zone.pdf",
+      "bytes": 259189,
+      "sha256": "7e36d2c350528fc2a6ff158fa750be8d3f5d36615f1d5e36942be85836a1b6b8",
+      "file": "H21.pdf"
+    },
+    {
+      "clause": "E36",
+      "title": "E36 Natural hazards and flooding",
+      "zone_codes": [],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20E%20Auckland-wide/5.%20Environmental%20risk/E36%20Natural%20hazards%20and%20flooding.pdf",
+      "bytes": 492368,
+      "sha256": "f68aa3590c1433ebfe45b2425d976f6e2d5c0d651fd5ca6c00f88f4b6ce1e121",
+      "file": "E36.pdf"
+    },
+    {
+      "clause": "E38",
+      "title": "E38 Subdivision - Urban",
+      "zone_codes": [],
+      "excluded_zone_codes": [
+        16,
+        11,
+        46,
+        15,
+        3,
+        68,
+        69,
+        4,
+        51
+      ],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20E%20Auckland-wide/6.%20Subdivision/E38%20Subdivision%20-%20Urban.pdf",
+      "bytes": 686210,
+      "sha256": "50576ad24e002f5daa411ca7af8551c6e690b819f2217ba1b8381d642804e41c",
+      "file": "E38.pdf"
+    },
+    {
+      "clause": "E39",
+      "title": "E39 Subdivision - Rural",
+      "zone_codes": [
+        16,
+        11,
+        46,
+        15,
+        3,
+        68,
+        69,
+        4,
+        51
+      ],
+      "excluded_zone_codes": [],
+      "url": "https://unitaryplan.aucklandcouncil.govt.nz/images/Auckland%20Unitary%20Plan%20Operative/Chapter%20E%20Auckland-wide/6.%20Subdivision/E39%20Subdivision%20-%20Rural.pdf",
+      "bytes": 554521,
+      "sha256": "0d0120edc196a50a73a6b918ac6992809af1bb97dc4228a743427f4e57c2a272",
+      "file": "E39.pdf"
+    }
+  ]
+}

@@ -5,10 +5,17 @@ data/raw/valuations.jsonl.gz
 data/raw/opes_suburbs.json
 # 银行挂牌利率，同上；几秒就能重新抓，而且隔天就过时了。
 data/raw/mortgage_rates.json
+# 统一规划分区多边形：许可上（CC BY 4.0）可以放，43 MB 的体积不行 —— clone
+# 一个作品集仓库不该先等一分钟。90 秒能重抓，fetch 报告留在仓库里当凭据。
+data/raw/unitary_plan_zones.geojson.gz
+# 统一规划章节 PDF：议会版权，不像上面的 GIS 数据那样有明确 CC BY，不转发。
+# 8 秒能重抓，plan_index.json 里有每章的 sha256 可核对拿到的是不是同一份。
+data/raw/plan/*.pdf
 #
 # 留在仓库里的是：
-#   data/raw/auckland_boundaries.geojson  LINZ, CC BY 4.0
-#   data/raw/wikipedia.json               English Wikipedia, CC BY-SA 4.0
+#   data/raw/auckland_boundaries.geojson    LINZ, CC BY 4.0
+#   data/raw/wikipedia.json                 English Wikipedia, CC BY-SA 4.0
+#   data/raw/unitary_plan_zones_report.txt  抓取时排除了什么，为什么
 
 # --- 派生产物：全部可由 scripts/pipeline.py 从 data/raw 重建 -------------
 data/auckland.duckdb
