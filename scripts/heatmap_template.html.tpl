@@ -2715,7 +2715,10 @@ async function handle(text) {
 
   const usable = c.budget || c.minPrice || c.maxPrice || c.beds || c.zones.length
              || c.maxKm || c.minKm || c.wants.length;
-  if (picks || usable) say(
+  // Planning terms such as “住宅混合城市区” can contain ordinary location
+  // words (for example “中区”). They are not suburb-search criteria, so do not
+  // echo the local recommendation parser's incidental interpretation.
+  if ((picks || usable) && !PLAN_TOPIC.test(text)) say(
     L(`读到的条件：${describeCriteria(c)}`, `What I read: ${describeCriteria(c)}`) +
     (carried ? ` <span class="muted-note">${L(
       '（接着上一轮，之前说过的条件还在。说「重新开始」可以清掉）',
