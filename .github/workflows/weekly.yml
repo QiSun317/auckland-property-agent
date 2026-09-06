@@ -159,6 +159,7 @@ jobs:
       # a dependency — and the page should never wait on it, or fail with it.
       - name: Sync to Unity Catalog
         if: env.DATABRICKS_HOST != ''
+        continue-on-error: true
         run: |
           if [ ! -f data/auckland.duckdb ]; then
             echo "nothing was rebuilt this week — nothing new to sync"

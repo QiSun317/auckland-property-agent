@@ -104,8 +104,19 @@ def warehouse(w):
         sys.exit("no SQL warehouse in the workspace — create one in SQL > Warehouses")
     wh = whs[0]
     if str(wh.state) not in ("State.RUNNING", "RUNNING"):
+        from databricks.sdk.errors import BadRequest
         print(f"  starting {wh.name} ({wh.state})…", flush=True)
-        w.warehouses.start(wh.id).result(timeout=__import__("datetime").timedelta(minutes=10))
+        for delay in (15, 30, None):
+            try:
+                w.warehouses.start(wh.id).result(
+                    timeout=__import__("datetime").timedelta(minutes=10))
+                break
+            except BadRequest as e:
+                if delay is None or "try again later" not in str(e).lower():
+                    raise
+                print(f"  Databricks could not provision compute; retrying in {delay}s…",
+                      flush=True)
+                time.sleep(delay)
     return wh
 
 
