@@ -358,6 +358,18 @@ def log_jsonl(record):
         fh.write(json.dumps(record, default=str) + "\n")
 
 
+def artifact_missing(src, state):
+    path = RAW / src.artifact
+    if not path.exists():
+        return True
+    if path.parent != RAW:
+        try:
+            src.check(path, state)
+        except Reject:
+            return True
+    return False
+
+
 def run_script(name, env_extra=None):
     env = {**os.environ, **(env_extra or {})}
     proc = subprocess.run([PY, str(SCRIPTS / name)], env=env,
@@ -387,7 +399,7 @@ def do_run(args):
         # would skip prices as recently fetched and then fail the build on a
         # missing opes_suburbs.json. True locally too: delete a raw file and the
         # old code skipped it and broke the build rather than refetching.
-        missing = not (RAW / src.artifact).exists()
+        missing = artifact_missing(src, state)
         due = ("all" in force or src.name in force or missing
                or age is None or age >= src.every_days)
         if missing and last:
@@ -427,7 +439,7 @@ def do_run(args):
             continue
 
         digest = sha256(staged)
-        if digest == state["last_hash"].get(src.name):
+        if digest == state["last_hash"].get(src.name) and not missing:
             print(f"  {src.name:<13} unchanged ({rows:,} rows)")
             discard(staged, src.artifact)
             steps.append(dict(run_id=run_id, source=src.name, status="unchanged",
